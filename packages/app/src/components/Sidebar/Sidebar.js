@@ -7,6 +7,7 @@ import {useSettings} from '../../context/SettingsContext';
 import {useJellyseerr} from '../../context/JellyseerrContext';
 import JellyseerrIcon from '../icons/JellyseerrIcon';
 import SeerrIcon from '../icons/SeerrIcon';
+import {KEYS} from '../../utils/keys';
 
 import css from './Sidebar.module.less';
 
@@ -119,7 +120,7 @@ const Sidebar = ({
 	}, []);
 
 	const handleNavKeyDown = useCallback((e) => {
-		if (e.keyCode === 39) {
+		if (e.keyCode === KEYS.RIGHT) {
 			// Right arrow - move focus to content
 			e.preventDefault();
 			e.stopPropagation();
@@ -145,8 +146,7 @@ const Sidebar = ({
 			}
 			Spotlight.setPointerMode(false);
 			Spotlight.move('right');
-		} else if (e.keyCode === 38 || e.keyCode === 40) {
-			// Up/Down - prevent escaping the sidebar
+		} else if (e.keyCode === KEYS.UP || e.keyCode === KEYS.DOWN) {
 			const nav = e.currentTarget;
 			const spottables = nav.querySelectorAll('[data-spotlight-id], .spottable');
 			if (spottables.length === 0) return;
@@ -155,10 +155,10 @@ const Sidebar = ({
 			if (items.length === 0) return;
 			const first = items[0];
 			const last = items[items.length - 1];
-			if (e.keyCode === 38 && (focused === first || first.contains(focused))) {
+			if (e.keyCode === KEYS.UP && (focused === first || first.contains(focused))) {
 				e.preventDefault();
 				e.stopPropagation();
-			} else if (e.keyCode === 40 && (focused === last || last.contains(focused))) {
+			} else if (e.keyCode === KEYS.DOWN && (focused === last || last.contains(focused))) {
 				e.preventDefault();
 				e.stopPropagation();
 			}

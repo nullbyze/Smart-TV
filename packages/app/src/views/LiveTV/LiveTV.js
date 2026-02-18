@@ -4,6 +4,7 @@ import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDeco
 import Spotlight from '@enact/spotlight';
 import {useAuth} from '../../context/AuthContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import {KEYS} from '../../utils/keys';
 
 import css from './LiveTV.module.less';
 
@@ -179,13 +180,13 @@ const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
 			// Block all input when program detail is shown
 			if (selectedProgram) return;
 
-			if (keyCode >= 48 && keyCode <= 57) {
+			if (keyCode >= KEYS.NUM_0 && keyCode <= KEYS.NUM_9) {
 				e.preventDefault();
 				handleChannelNumber(String.fromCharCode(keyCode));
 				return;
 			}
 
-			if (keyCode === 38) {
+			if (keyCode === KEYS.UP) {
 				const focused = Spotlight.getCurrent();
 				if (focused && (focused.id === 'prev-day' || focused.id === 'next-day' || focused.id === 'today' || focused.id === 'filter' || focused.id === 'recordings')) {
 					e.preventDefault();
@@ -205,7 +206,7 @@ const LiveTV = ({onPlayChannel, onRecordings, backHandlerRef}) => {
 			}
 
 			if (focusMode === 'controls') {
-				if (keyCode === 40) {
+				if (keyCode === KEYS.DOWN) {
 					e.preventDefault();
 					setFocusMode('grid');
 					Spotlight.focus('program-grid');

@@ -1,5 +1,6 @@
 import {useState, useEffect, useCallback, useRef, useMemo} from 'react';
 import {getImageUrl} from '../../utils/helpers';
+import {KEYS} from '../../utils/keys';
 import css from './PhotoViewer.module.less';
 
 const PhotoViewer = ({item, items, serverUrl, onClose}) => {
@@ -84,7 +85,7 @@ const PhotoViewer = ({item, items, serverUrl, onClose}) => {
 	useEffect(() => {
 		const handleKeyDown = (e) => {
 			const key = e.keyCode;
-			if (key === 461 || key === 27 || key === 8) {
+			if (key === KEYS.BACK || key === KEYS.ESCAPE || key === KEYS.BACKSPACE) {
 				e.preventDefault();
 				e.stopPropagation();
 				onClose?.();

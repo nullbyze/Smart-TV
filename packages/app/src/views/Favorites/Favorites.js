@@ -8,6 +8,7 @@ import * as connectionPool from '../../services/connectionPool';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ProxiedImage from '../../components/ProxiedImage';
 import {getImageUrl, getPrimaryImageId} from '../../utils/helpers';
+import {KEYS} from '../../utils/keys';
 
 import css from './Favorites.module.less';
 
@@ -145,7 +146,7 @@ const Favorites = ({onSelectItem, onSelectPerson}) => {
 
 	const handleRowKeyDown = useCallback((e) => {
 		const rowIndex = parseInt(e.currentTarget.dataset.rowIndex, 10);
-		if (e.keyCode === 38) {
+		if (e.keyCode === KEYS.UP) {
 			e.preventDefault();
 			e.stopPropagation();
 			if (rowIndex === 0) {
@@ -153,7 +154,7 @@ const Favorites = ({onSelectItem, onSelectPerson}) => {
 			} else if (rowIndex > 0) {
 				Spotlight.focus(`favorites-row-${rowIndex - 1}`);
 			}
-		} else if (e.keyCode === 40) {
+		} else if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			e.stopPropagation();
 			if (rowIndex < visibleRows.length - 1) {

@@ -8,6 +8,7 @@ import {useJellyseerr} from '../../context/JellyseerrContext';
 import * as connectionPool from '../../services/connectionPool';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ProxiedImage from '../../components/ProxiedImage';
+import {KEYS} from '../../utils/keys';
 import {getImageUrl} from '../../utils/helpers';
 
 import css from './Search.module.less';
@@ -177,19 +178,19 @@ const Search = ({onSelectItem, onSelectPerson}) => {
 	}, [doSearch]);
 
 	const handleInputKeyDown = useCallback((e) => {
-		if (e.keyCode === 40) {
+		if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			if (visibleRows.length > 0) {
 				Spotlight.focus('search-row-0');
 			}
-		} else if (e.keyCode === 38) {
+		} else if (e.keyCode === KEYS.UP) {
 			e.preventDefault();
 		}
 	}, [visibleRows.length]);
 
 	const handleRowKeyDown = useCallback((e) => {
 		const rowIndex = parseInt(e.currentTarget.dataset.rowIndex, 10);
-		if (e.keyCode === 38) {
+		if (e.keyCode === KEYS.UP) {
 			e.preventDefault();
 			e.stopPropagation();
 			if (rowIndex === 0) {
@@ -197,7 +198,7 @@ const Search = ({onSelectItem, onSelectPerson}) => {
 			} else {
 				Spotlight.focus(`search-row-${rowIndex - 1}`);
 			}
-		} else if (e.keyCode === 40) {
+		} else if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			e.stopPropagation();
 			if (rowIndex < visibleRows.length - 1) {

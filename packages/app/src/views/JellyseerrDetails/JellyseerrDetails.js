@@ -8,6 +8,7 @@ import Button from '@enact/sandstone/Button';
 import jellyseerrApi, {canRequestMovies, canRequestTv, canRequest4kMovies, canRequest4kTv, hasAdvancedRequestPermission} from '../../services/jellyseerrApi';
 import {useJellyseerr} from '../../context/JellyseerrContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import {KEYS} from '../../utils/keys';
 import css from './JellyseerrDetails.module.less';
 
 const safeFocus = (spotlightId) => {
@@ -206,12 +207,11 @@ const HorizontalMediaRow = memo(({title, items, onSelect, rowIndex, onNavigateUp
 	}, []);
 
 	const handleKeyDown = useCallback((e) => {
-		if (e.keyCode === 38) {
-			e.preventDefault();
-			e.stopPropagation();
-			onNavigateUp?.(rowIndex);
-		} else if (e.keyCode === 40) {
-			e.preventDefault();
+	if (e.keyCode === KEYS.UP) {
+		e.preventDefault();
+		e.stopPropagation();
+		onNavigateUp?.(rowIndex);
+	} else if (e.keyCode === KEYS.DOWN) {
 			e.stopPropagation();
 			onNavigateDown?.(rowIndex);
 		}
@@ -980,7 +980,7 @@ const JellyseerrDetails = ({mediaType, mediaId, onClose, onSelectItem, onSelectP
 	}, [onSelectKeyword, mediaType]);
 
 	const handleActionButtonsKeyDown = useCallback((e) => {
-		if (e.keyCode === 40) {
+		if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			e.stopPropagation();
 			const castFocused = safeFocus('cast-section');
@@ -1023,11 +1023,11 @@ const JellyseerrDetails = ({mediaType, mediaId, onClose, onSelectItem, onSelectP
 	}, []);
 
 	const handleCastSectionKeyDown = useCallback((e) => {
-		if (e.keyCode === 38) {
+		if (e.keyCode === KEYS.UP) {
 			e.preventDefault();
 			e.stopPropagation();
 			safeFocus('action-buttons');
-		} else if (e.keyCode === 40) {
+		} else if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			e.stopPropagation();
 			const recFocused = safeFocus('details-row-0');
@@ -1041,7 +1041,7 @@ const JellyseerrDetails = ({mediaType, mediaId, onClose, onSelectItem, onSelectP
 	}, []);
 
 	const handleKeywordsSectionKeyDown = useCallback((e) => {
-		if (e.keyCode === 38) {
+		if (e.keyCode === KEYS.UP) {
 			// Up arrow - navigate to previous section
 			e.preventDefault();
 			e.stopPropagation();

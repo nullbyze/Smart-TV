@@ -1,6 +1,7 @@
 import {useCallback, useRef, memo} from 'react';
 import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDecorator';
 import MediaCard from '../MediaCard';
+import {KEYS} from '../../utils/keys';
 
 import css from './MediaRow.module.less';
 
@@ -55,11 +56,11 @@ const MediaRow = ({
 	}, [onFocus, rowIndex]);
 
 	const handleKeyDown = useCallback((e) => {
-		if (e.keyCode === 38 && onNavigateUp) {
+		if (e.keyCode === KEYS.UP && onNavigateUp) {
 			e.preventDefault();
 			e.stopPropagation();
 			onNavigateUp(rowIndex);
-		} else if (e.keyCode === 40 && onNavigateDown) {
+		} else if (e.keyCode === KEYS.DOWN && onNavigateDown) {
 			e.preventDefault();
 			e.stopPropagation();
 			onNavigateDown(rowIndex);

@@ -9,6 +9,7 @@ import {useAuth} from '../../context/AuthContext';
 import {createApiForServer} from '../../services/jellyfinApi';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import {getImageUrl, getPrimaryImageId} from '../../utils/helpers';
+import {KEYS} from '../../utils/keys';
 
 import css from './Library.module.less';
 
@@ -248,11 +249,11 @@ setStartLetter(letter === startLetter ? null : letter);
 }, [startLetter]);
 
 const handleToolbarKeyDown = useCallback((e) => {
-if (e.keyCode === 38) {
+if (e.keyCode === KEYS.UP) {
 e.preventDefault();
 e.stopPropagation();
 Spotlight.focus('navbar');
-} else if (e.keyCode === 40) {
+} else if (e.keyCode === KEYS.DOWN) {
 e.preventDefault();
 e.stopPropagation();
 Spotlight.focus('library-grid');
@@ -260,7 +261,7 @@ Spotlight.focus('library-grid');
 }, []);
 
 const handleGridKeyDown = useCallback((e) => {
-if (e.keyCode === 38) {
+if (e.keyCode === KEYS.UP) {
 const grid = document.querySelector(`.${css.grid}`);
 if (grid) {
 const scrollTop = grid.scrollTop || 0;

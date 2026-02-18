@@ -1,5 +1,6 @@
 import {useState, useEffect, useCallback, useRef} from 'react';
 import JSZip from 'jszip';
+import {KEYS} from '../../utils/keys';
 import css from './ComicViewer.module.less';
 
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'jpe', 'jif', 'jfif', 'png', 'avif', 'gif', 'bmp', 'tiff', 'tif', 'webp'];
@@ -117,7 +118,7 @@ const ComicViewer = ({item, serverUrl, accessToken, onClose}) => {
 	useEffect(() => {
 		const handleKeyDown = (e) => {
 			const key = e.keyCode;
-			if (key === 461 || key === 27 || key === 8) {
+			if (key === KEYS.BACK || key === KEYS.ESCAPE || key === KEYS.BACKSPACE) {
 				e.preventDefault();
 				e.stopPropagation();
 				onClose?.();

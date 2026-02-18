@@ -3,6 +3,7 @@ import Spottable from '@enact/spotlight/Spottable';
 import Spotlight from '@enact/spotlight';
 import {useAuth} from '../../context/AuthContext';
 import * as jellyfinApi from '../../services/jellyfinApi';
+import {KEYS} from '../../utils/keys';
 
 import css from './Login.module.less';
 
@@ -321,13 +322,13 @@ const Login = ({
 	}, [quickConnectInterval]);
 
 	const handleServerInputKeyDown = useCallback((e) => {
-		if (e.keyCode === 13) {
+		if (e.keyCode === KEYS.ENTER) {
 			handleConnect();
 		}
 	}, [handleConnect]);
 
 	const handlePasswordKeyDown = useCallback((e) => {
-		if (e.keyCode === 13) {
+		if (e.keyCode === KEYS.ENTER) {
 			handleLogin();
 		}
 	}, [handleLogin]);
@@ -339,7 +340,7 @@ const Login = ({
 	}, [publicUsers, handleUserSelect]);
 
 	const handleUserCardKeyDown = useCallback((e) => {
-		if (e.keyCode === 13) {
+		if (e.keyCode === KEYS.ENTER) {
 			const userId = e.currentTarget.dataset.userId;
 			const user = publicUsers.find(u => u.Id === userId);
 			if (user) handleUserSelect(user);

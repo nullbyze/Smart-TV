@@ -7,6 +7,7 @@ import {useSettings} from '../../context/SettingsContext';
 import {useJellyseerr} from '../../context/JellyseerrContext';
 import JellyseerrIcon from '../icons/JellyseerrIcon';
 import SeerrIcon from '../icons/SeerrIcon';
+import {KEYS} from '../../utils/keys';
 
 import css from './NavBar.module.less';
 
@@ -155,7 +156,7 @@ const NavBar = ({
 	}, []);
 
 	const handleNavKeyDown = useCallback((e) => {
-		if (e.keyCode === 40) {
+		if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			e.stopPropagation();
 			const focusTargets = [

@@ -6,13 +6,8 @@ import {AuthProvider, useAuth} from '../context/AuthContext';
 import {useSettings} from '../context/SettingsContext';
 import * as playback from '../services/playback';
 import * as connectionPool from '../services/connectionPool';
-import {
-	isWebOS,
-	setupVisibilityHandler,
-	setupWebOSLifecycle,
-	cleanupVideoElement
-} from '../services/webosVideo';
-import {platformBack} from '@enact/webos/application';
+import {isBackKey, KEYS} from '../utils/keys';
+import {getPlatform, isTizen} from '../platform';
 import {SettingsProvider} from '../context/SettingsContext';
 import {JellyseerrProvider} from '../context/JellyseerrContext';
 import {useVersionCheck} from '../hooks/useVersionCheck';
@@ -280,10 +275,10 @@ const AppContent = (props) => {
 
 	useEffect(() => {
 		const handleKeyDown = (e) => {
-			if (e.keyCode === 8 && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+			if (e.keyCode === KEYS.BACKSPACE && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
 				return;
 			}
-			if (e.keyCode === 461 || e.keyCode === 27 || e.keyCode === 8) {
+			if (isBackKey(e)) {
 				e.preventDefault();
 				e.stopPropagation();
 
@@ -293,9 +288,10 @@ const AppContent = (props) => {
 				}
 
 				if (panelIndex === PANELS.BROWSE || panelIndex === PANELS.LOGIN) {
-					// At root level — let the platform handle back (closes/minimizes app)
 					performAppCleanup();
-					platformBack();
+					import('@enact/webos/application').then(m => m.platformBack()).catch(() => {
+						if (isTizen() && typeof tizen !== 'undefined') tizen.application.getCurrentApplication().exit();
+					});
 					return;
 				}
 				if (panelIndex === PANELS.PLAYER || panelIndex === PANELS.SETTINGS) {

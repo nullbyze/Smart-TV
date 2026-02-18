@@ -2,6 +2,7 @@ import Spottable from '@enact/spotlight/Spottable';
 import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDecorator';
 import Spotlight from '@enact/spotlight';
 import {useCallback, useEffect} from 'react';
+import {isBackKey} from '../../utils/keys';
 
 import css from './Player.module.less';
 
@@ -41,7 +42,7 @@ const SubtitleOffsetOverlay = ({visible, currentOffset, onClose, onOffsetChange}
 		if (!visible) return;
 
 		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.key === 'GoBack' || e.key === 'Backspace') {
+			if (isBackKey(e)) {
 				e.preventDefault();
 				e.stopPropagation();
 				onClose();

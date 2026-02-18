@@ -13,6 +13,7 @@ import JellyseerrIcon from '../../components/icons/JellyseerrIcon';
 import SeerrIcon from '../../components/icons/SeerrIcon';
 import serverLogger from '../../services/serverLogger';
 import connectionPool from '../../services/connectionPool';
+import {isBackKey, KEYS} from '../../utils/keys';
 
 import css from './Settings.module.less';
 
@@ -275,7 +276,7 @@ const Settings = ({onBack, onLibrariesChanged}) => {
 	// Global back button handler for Settings view
 	useEffect(() => {
 		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.keyCode === 27 || e.keyCode === 8) {
+			if (isBackKey(e)) {
 				if (e.target.tagName === 'INPUT') {
 					return;
 				}
@@ -326,7 +327,7 @@ const Settings = ({onBack, onLibrariesChanged}) => {
 	}, []);
 
 	const handleSidebarKeyDown = useCallback((e) => {
-		if (e.keyCode === 37) {
+		if (e.keyCode === KEYS.LEFT) {
 			e.preventDefault();
 			e.stopPropagation();
 			Spotlight.focus('settings-content');
@@ -334,7 +335,7 @@ const Settings = ({onBack, onLibrariesChanged}) => {
 	}, []);
 
 	const handleContentKeyDown = useCallback((e) => {
-		if (e.keyCode === 39) {
+		if (e.keyCode === KEYS.RIGHT) {
 			const target = e.target;
 			if (target.tagName !== 'INPUT') {
 				e.preventDefault();

@@ -5,6 +5,7 @@ import {VirtualGridList} from '@enact/sandstone/VirtualList';
 import Image from '@enact/sandstone/Image';
 import {useAuth} from '../../context/AuthContext';
 import MediaCard from '../../components/MediaCard';
+import {KEYS} from '../../utils/keys';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
 import css from './Person.module.less';
@@ -43,7 +44,7 @@ const Person = ({personId, onSelectItem}) => {
 	}, [onSelectItem]);
 
 	const handleGridKeyDown = useCallback((e) => {
-		if (e.keyCode === 38) {
+		if (e.keyCode === KEYS.UP) {
 			const grid = document.querySelector(`.${css.grid}`);
 			if (grid) {
 				const scrollTop = grid.scrollTop || 0;

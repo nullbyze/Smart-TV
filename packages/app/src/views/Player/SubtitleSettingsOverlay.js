@@ -5,6 +5,7 @@ import Scroller from '@enact/sandstone/Scroller';
 import Slider from '@enact/sandstone/Slider';
 import {useCallback, useEffect} from 'react';
 import {useSettings} from '../../context/SettingsContext';
+import {isBackKey} from '../../utils/keys';
 
 import css from './Player.module.less';
 
@@ -90,7 +91,7 @@ const SubtitleSettingsOverlay = ({visible, onClose}) => {
 		if (!visible) return;
 
 		const handleKeyDown = (e) => {
-			if (e.keyCode === 461 || e.key === 'GoBack' || e.key === 'Backspace') {
+			if (isBackKey(e)) {
 				e.preventDefault();
 				e.stopPropagation();
 				onClose();

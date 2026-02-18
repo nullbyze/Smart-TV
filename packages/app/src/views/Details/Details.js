@@ -11,6 +11,7 @@ import MediaRow from '../../components/MediaRow';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import RatingsRow from '../../components/RatingsRow';
 import {formatDuration, getImageUrl, getBackdropId, getLogoUrl} from '../../utils/helpers';
+import {KEYS} from '../../utils/keys';
 
 import css from './Details.module.less';
 
@@ -475,7 +476,7 @@ const handleSectionKeyDown = useCallback((ev) => {
 		const currentSpottable = ev.target.closest('.spottable');
 		if (!currentSpottable) return;
 
-		if (ev.keyCode === 37 || ev.keyCode === 39) { // Left / Right
+		if (ev.keyCode === KEYS.LEFT || ev.keyCode === KEYS.RIGHT) { // Left / Right
 			const scroller = currentSpottable.closest(`.${css.sectionScroll}`) || currentSpottable.closest(`.${css.castScroller}`);
 			if (!scroller) return; // Let MediaRow handle its own left/right
 
@@ -483,13 +484,13 @@ const handleSectionKeyDown = useCallback((ev) => {
 			const currentIdx = allCards.indexOf(currentSpottable);
 			if (currentIdx === -1) return;
 
-			const targetIdx = ev.keyCode === 37 ? currentIdx - 1 : currentIdx + 1;
+			const targetIdx = ev.keyCode === KEYS.LEFT ? currentIdx - 1 : currentIdx + 1;
 			if (targetIdx < 0 || targetIdx >= allCards.length) return;
 
 			ev.preventDefault();
 			ev.stopPropagation();
 			Spotlight.focus(allCards[targetIdx]);
-		} else if (ev.keyCode === 38) { // Up arrow
+		} else if (ev.keyCode === KEYS.UP) { // Up arrow
 			const container = currentSpottable.closest(`.${css.sectionsContainer}`);
 			if (!container) return;
 
@@ -512,7 +513,7 @@ const handleSectionKeyDown = useCallback((ev) => {
 					Spotlight.focus(prevSpottable);
 				}
 			}
-		} else if (ev.keyCode === 40) { // Down arrow
+		} else if (ev.keyCode === KEYS.DOWN) { // Down arrow
 			const container = currentSpottable.closest(`.${css.sectionsContainer}`);
 			if (!container) return;
 
@@ -535,7 +536,7 @@ const handleSectionKeyDown = useCallback((ev) => {
 	}, []);
 
 	const handleButtonRowKeyDown = useCallback((ev) => {
-		if (ev.keyCode === 40) { // Down arrow
+		if (ev.keyCode === KEYS.DOWN) { // Down arrow
 			ev.preventDefault();
 			ev.stopPropagation();
 			const sectionsContainer = document.querySelector(`.${css.sectionsContainer}`);
@@ -549,7 +550,7 @@ const handleSectionKeyDown = useCallback((ev) => {
 	}, []);
 
 	const handleSeasonButtonKeyDown = useCallback((ev) => {
-		if (ev.keyCode === 40) { // Down arrow
+		if (ev.keyCode === KEYS.DOWN) { // Down arrow
 			ev.preventDefault();
 			ev.stopPropagation();
 			// Try episode list first (seasons), then track list (albums)

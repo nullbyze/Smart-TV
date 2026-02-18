@@ -9,6 +9,7 @@ import {getImageUrl, getBackdropId, getLogoUrl} from '../../utils/helpers';
 import {getFromStorage, saveToStorage} from '../../services/storage';
 import * as connectionPool from '../../services/connectionPool';
 import RatingsRow from '../../components/RatingsRow';
+import {KEYS} from '../../utils/keys';
 
 import css from './Browse.module.less';
 
@@ -820,7 +821,7 @@ const Browse = ({
 	}, [featuredItems.length]);
 
 	const handleFeaturedKeyDown = useCallback((e) => {
-		if (e.keyCode === 37) {
+		if (e.keyCode === KEYS.LEFT) {
 			e.preventDefault();
 			e.stopPropagation();
 			if (settings.navbarPosition === 'left') {
@@ -828,17 +829,17 @@ const Browse = ({
 			} else {
 				handleFeaturedPrev();
 			}
-		} else if (e.keyCode === 39) {
+		} else if (e.keyCode === KEYS.RIGHT) {
 			e.preventDefault();
 			e.stopPropagation();
 			handleFeaturedNext();
-		} else if (e.keyCode === 38) {
+		} else if (e.keyCode === KEYS.UP) {
 			e.preventDefault();
 			e.stopPropagation();
 			if (settings.navbarPosition !== 'left') {
 				Spotlight.focus('navbar-home');
 			}
-		} else if (e.keyCode === 40) {
+		} else if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			e.stopPropagation();
 			setBrowseMode('rows');

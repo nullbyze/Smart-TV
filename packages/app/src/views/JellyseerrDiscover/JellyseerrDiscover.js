@@ -6,6 +6,7 @@ import {useJellyseerr} from '../../context/JellyseerrContext';
 import {useSettings} from '../../context/SettingsContext';
 import jellyseerrApi from '../../services/jellyseerrApi';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import {KEYS} from '../../utils/keys';
 
 import css from './JellyseerrDiscover.module.less';
 
@@ -238,11 +239,11 @@ const DiscoverRow = memo(function DiscoverRow({
 	const scrollerRef = useRef(null);
 
 	const handleKeyDown = useCallback((e) => {
-		if (e.keyCode === 38) {
+		if (e.keyCode === KEYS.UP) {
 			e.preventDefault();
 			e.stopPropagation();
 			onNavigateUp?.(rowIndex);
-		} else if (e.keyCode === 40) {
+		} else if (e.keyCode === KEYS.DOWN) {
 			e.preventDefault();
 			e.stopPropagation();
 			onNavigateDown?.(rowIndex);
