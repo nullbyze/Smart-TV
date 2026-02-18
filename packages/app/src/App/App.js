@@ -211,6 +211,10 @@ const AppContent = (props) => {
 		const removeVisibilityHandler = setupVisibilityHandler(handleVisibilityHidden, handleVisibilityVisible);
 		const removeLifecycleHandler = setupPlatformLifecycle(handleRelaunch);
 
+		if (isTizen()) {
+			import('@moonfin/platform-tizen/smarthub').then(m => m.initSmartHub()).catch(() => {});
+		}
+
 		let handlePlatformLaunch;
 		if (isWebOS()) {
 			handlePlatformLaunch = () => console.log('[App] webOSLaunch event received');

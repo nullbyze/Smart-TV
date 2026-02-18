@@ -8,7 +8,7 @@
  */
 /* global tizen */
 
-import {getServerUrl, getUserId, getAuthHeader} from './jellyfinApi';
+import {getServerUrl, getUserId, getAuthHeader} from '@moonfin/app/src/services/jellyfinApi';
 
 const NEXT_UP_LIMIT = 2;
 const RESUME_LIMIT = 4;
