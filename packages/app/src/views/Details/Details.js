@@ -297,15 +297,10 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 			if (albumTracks.length > 0) {
 				onPlay?.(albumTracks[0], false, {audioPlaylist: albumTracks});
 			}
-		} else if (item.Type === 'MusicArtist') {
-			// Navigate to first album
-			if (artistAlbums.length > 0) {
-				onSelectItem?.(artistAlbums[0]);
-			}
 		} else {
 			onPlay?.(item, false, playbackOptions);
 		}
-	}, [item, episodes, nextUp, seasons, albumTracks, artistAlbums, onPlay, onSelectItem, selectedAudioIndex, selectedSubtitleIndex]);
+	}, [item, episodes, nextUp, seasons, albumTracks, onPlay, onSelectItem, selectedAudioIndex, selectedSubtitleIndex]);
 
 	const handleResume = useCallback(() => {
 		if (!item) return;
@@ -503,6 +498,38 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 			onSelectItem?.(album);
 		}
 	}, [artistAlbums, onSelectItem]);
+
+	const handleArtistPlay = useCallback(async () => {
+		if (!item || item.Type !== 'MusicArtist') return;
+		try {
+			const tracksData = await effectiveApi.getArtistItems(item.Id, 200);
+			const tracks = tracksData.Items || [];
+			if (tracks.length > 0) {
+				onPlay?.(tracks[0], false, {audioPlaylist: tracks});
+			}
+		} catch (e) {
+			if (artistAlbums.length > 0) {
+				onSelectItem?.(artistAlbums[0]);
+			}
+		}
+	}, [item, effectiveApi, artistAlbums, onPlay, onSelectItem]);
+
+	const handleArtistShuffle = useCallback(async () => {
+		if (!item || item.Type !== 'MusicArtist') return;
+		try {
+			const tracksData = await effectiveApi.getArtistItems(item.Id, 200);
+			const tracks = tracksData.Items || [];
+			if (tracks.length > 0) {
+				// Fisher-Yates shuffle
+				const shuffled = [...tracks];
+				for (let i = shuffled.length - 1; i > 0; i--) {
+					const j = Math.floor(Math.random() * (i + 1));
+					[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+				}
+				onPlay?.(shuffled[0], false, {audioPlaylist: shuffled});
+			}
+		} catch (e) { /* ignore */ }
+	}, [item, effectiveApi, onPlay]);
 
 	const handleCastSelect = useCallback((ev) => {
 		const personId = ev.currentTarget.dataset.personId;
@@ -1255,11 +1282,19 @@ const handleSectionKeyDown = useCallback((ev) => {
 								{item.Overview && <p className={css.overview}>{item.Overview}</p>}
 								<HorizontalContainer className={css.actionButtons} spotlightId="details-action-buttons">
 									{artistAlbums.length > 0 && (
-										<SpottableDiv className={css.btnWrapper} onClick={handlePlay} onFocus={handleButtonRowFocus} spotlightId="details-primary-btn">
+										<SpottableDiv className={css.btnWrapper} onClick={handleArtistPlay} onFocus={handleButtonRowFocus} spotlightId="details-primary-btn">
 											<div className={css.btnAction}>
 												<span className={css.btnIcon}>▶</span>
 											</div>
 											<span className={css.btnLabel}>Play</span>
+										</SpottableDiv>
+									)}
+									{artistAlbums.length > 0 && (
+										<SpottableDiv className={css.btnWrapper} onClick={handleArtistShuffle}>
+											<div className={css.btnAction}>
+												<svg className={css.btnIcon} viewBox="0 -960 960 960" fill="currentColor"><path d="M560-160v-80h104L537-367l57-57 126 126v-102h80v240H560Zm-344 0-56-56 568-568H624v-80h240v240h-80v-104L216-160Zm151-377L160-744l56-56 207 207-56 56Z"/></svg>
+											</div>
+											<span className={css.btnLabel}>Shuffle</span>
 										</SpottableDiv>
 									)}
 									<SpottableDiv className={css.btnWrapper} onClick={handleToggleFavorite} spotlightId="details-favorite-btn">

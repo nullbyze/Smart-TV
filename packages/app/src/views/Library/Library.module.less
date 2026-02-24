@@ -1,12 +1,13 @@
+@accent: #00a4dc;
+
 .page {
-position: fixed;
+	position: fixed;
 	top: 0;
 	left: 0;
 	right: 0;
 	bottom: 0;
 	overflow: hidden;
 	background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-	padding-top: 80px;
 }
 
 .content {
@@ -17,150 +18,196 @@ position: fixed;
 	overflow: visible;
 }
 
+/* ── Header ─────────────────────────────────────────────── */
 .header {
 	display: flex;
+	align-items: baseline;
+	justify-content: center;
+	padding: 28px 48px 0;
+}
+
+.libraryTitle {
+	font-size: 42px;
+	font-weight: 700;
+	color: white;
+	letter-spacing: -0.5px;
+}
+
+.itemCount {
+	font-size: 18px;
+	color: rgba(255, 255, 255, 0.5);
+	margin-left: 16px;
+	font-weight: 400;
+}
+
+/* ── Focused item info ───────────────────────────────────── */
+.focusedInfo {
+	padding: 4px 48px 0;
+}
+
+.focusedName {
+	font-size: 22px;
+	font-weight: 600;
+	color: white;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.focusedMeta {
+	display: flex;
 	align-items: center;
-	padding: 30px 48px 16px;
-	min-height: 80px;
-	
-	.backButton {
-		background: rgba(255, 255, 255, 0.1);
-		border: none;
-		border-radius: 50%;
-		width: 56px;
-		height: 56px;
-		min-width: 56px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		
-		&:focus {
-			outline: none;
-			background: rgba(255, 255, 255, 0.2);
-			transform: scale(1.1);
-			box-shadow: 0 0 0 4px rgba(0, 164, 220, 0.5);
+	margin-top: 2px;
+	font-size: 15px;
+	color: rgba(255, 255, 255, 0.5);
+}
+
+.metaItem {
+	& + & {
+		margin-left: 6px;
+
+		&::before {
+			content: '\00B7';
+			margin-right: 6px;
 		}
-		
-		svg {
-			width: 28px;
-			height: 28px;
-			fill: white;
-		}
-	}
-	
-	.titleSection {
-		margin-left: 24px;
-		flex: 1;
-	}
-	
-	.title {
-		font-size: 38px;
-		font-weight: 600;
-		color: white;
-	}
-	
-	.subtitle {
-		font-size: 16px;
-		color: rgba(255, 255, 255, 0.6);
-		margin-top: 4px;
-	}
-	
-	.counter {
-		font-size: 18px;
-		color: rgba(255, 255, 255, 0.6);
-		margin-left: 20px;
 	}
 }
 
+.metaSeparator {
+	display: inline-block;
+	width: 1px;
+	height: 14px;
+	background: rgba(255, 255, 255, 0.25);
+	margin-left: 10px;
+	margin-right: 4px;
+	vertical-align: middle;
+}
+
+.pluginRating {
+	display: inline-flex;
+	align-items: center;
+	margin-left: 10px;
+	font-size: 14px;
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.ratingIcon {
+	width: 16px;
+	height: 16px;
+	margin-right: 4px;
+	vertical-align: middle;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────── */
 .toolbar {
 	display: flex;
 	align-items: center;
-	padding: 0 48px 20px;
-
-	> * + * {
-		margin-left: 16px;
-	}
+	padding: 12px 48px 14px;
 }
 
-.filterButton, .sortButton {
-	background: rgba(255, 255, 255, 0.1);
+.toolbarBtn {
+	background: rgba(255, 255, 255, 0.08);
 	border: 2px solid transparent;
-	border-radius: 8px;
-	padding: 12px 20px;
-	color: white;
-	font-size: 16px;
-	cursor: pointer;
-	transition: all 0.2s ease;
-	display: flex;
-	align-items: center;
-
-	> * + * {
-		margin-left: 8px;
-	}
-	
-	&:focus {
-		outline: none;
-		background: rgba(255, 255, 255, 0.2);
-		border-color: var(--accent-color, #00a4dc);
-		transform: scale(1.05);
-	}
-	
-	svg {
-		width: 20px;
-		height: 20px;
-		fill: currentColor;
-	}
-}
-
-.letterNav {
+	border-radius: 50%;
+	width: 52px;
+	height: 52px;
+	min-width: 52px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	flex: 1;
+	cursor: pointer;
+	transition: all 0.2s ease;
 
-	> * + * {
-		margin-left: 8px;
+	& + & {
+		margin-left: 20px;
 	}
-	
-	.letterButton {
-		background: rgba(255, 255, 255, 0.05);
-		border: 2px solid transparent;
-		border-radius: 6px;
-		padding: 12px 16px;
-		color: rgba(255, 255, 255, 0.7);
-		font-size: 18px;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		
-		&:focus {
-			outline: none;
-			background: rgba(255, 255, 255, 0.2);
-			border-color: var(--accent-color, #00a4dc);
-			color: white;
-			transform: scale(1.1);
-		}
-		
-		&.active {
-			background: var(--accent-color, #00a4dc);
-			color: white;
-		}
+
+	&:focus {
+		outline: none;
+		background: @accent;
+		border-color: @accent;
+		transform: scale(1.12);
 	}
 }
 
+.toolbarIcon {
+	width: 26px;
+	height: 26px;
+	fill: white;
+}
+
+/* ── Letter Navigation ───────────────────────────────────── */
+.letterNav {
+	display: flex;
+	align-items: center;
+	margin-left: 20px;
+	flex: 1;
+}
+
+.letterButton {
+	background: none;
+	border: 2px solid transparent;
+	border-radius: 6px;
+	padding: 8px 11px;
+	color: rgba(255, 255, 255, 0.55);
+	font-size: 17px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.15s ease;
+
+	& + & {
+		margin-left: 2px;
+	}
+
+	&:focus {
+		outline: none;
+		background: rgba(255, 255, 255, 0.15);
+		border-color: @accent;
+		color: white;
+		transform: scale(1.1);
+	}
+
+	&.active {
+		background: @accent;
+		color: white;
+	}
+}
+
+/* ── Grid ────────────────────────────────────────────────── */
 .gridContainer {
 	flex: 1;
 	overflow: hidden;
-	padding: 20px 28px 0;
+	padding: 10px 28px 0;
+
+	/* hide scrollbars on all nested scrollable elements */
+	* {
+		overflow: -moz-scrollbars-none;
+		-ms-overflow-style: none;
+		scrollbar-width: none;
+
+		&::-webkit-scrollbar {
+			display: none;
+			width: 0;
+			height: 0;
+		}
+	}
 }
 
 .grid {
 	height: 100%;
 	padding: 10px 20px;
+	overflow: -moz-scrollbars-none;
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+
+	&::-webkit-scrollbar {
+		display: none;
+		width: 0;
+		height: 0;
+	}
 }
 
+/* ── Item Cards ──────────────────────────────────────────── */
 .itemCard {
 	position: relative;
 	cursor: pointer;
@@ -169,12 +216,12 @@ position: fixed;
 	overflow: visible;
 	background: transparent;
 	margin: 10px;
-	
+
 	&:focus {
 		outline: none;
 		transform: scale(1.05);
 		z-index: 10;
-		
+
 		.poster {
 			border-color: white;
 		}
@@ -189,6 +236,49 @@ position: fixed;
 	border-radius: 8px;
 	transition: border-color 0.2s ease;
 	background: rgba(255, 255, 255, 0.05);
+}
+
+/* ── Badges ──────────────────────────────────────────────── */
+.favoriteBadge {
+	position: absolute;
+	top: 8px;
+	left: 8px;
+	width: 26px;
+	height: 26px;
+	background: rgba(0, 0, 0, 0.65);
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 5;
+	pointer-events: none;
+
+	svg {
+		width: 15px;
+		height: 15px;
+		fill: #e91e63;
+	}
+}
+
+.watchedBadge {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	width: 26px;
+	height: 26px;
+	background: rgba(0, 0, 0, 0.65);
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 5;
+	pointer-events: none;
+
+	svg {
+		width: 15px;
+		height: 15px;
+		fill: @accent;
+	}
 }
 
 .posterPlaceholder {
@@ -219,26 +309,25 @@ position: fixed;
 	fill: rgba(255, 255, 255, 0.3);
 }
 
-.itemInfo {
-	padding: 8px 0 0;
-	background: transparent;
+/* ── Status Bar ──────────────────────────────────────────── */
+.statusBar {
+	display: flex;
+	align-items: center;
+	padding: 6px 48px 10px;
 }
 
-.itemName {
-	font-size: 16px;
-	font-weight: 500;
-	color: white;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.itemYear {
+.statusText {
+	flex: 1;
 	font-size: 14px;
-	color: rgba(255, 255, 255, 0.6);
-	margin-top: 4px;
+	color: rgba(255, 255, 255, 0.35);
 }
 
+.statusCount {
+	font-size: 14px;
+	color: rgba(255, 255, 255, 0.35);
+}
+
+/* ── Loading / Empty states ──────────────────────────────── */
 .loading {
 	display: flex;
 	align-items: center;
@@ -256,22 +345,199 @@ position: fixed;
 	color: rgba(255, 255, 255, 0.5);
 }
 
-.popupContent {
+/* ── Sort & Filter Slide-Out Panel ───────────────────────── */
+.sortPanelOverlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.45);
+	z-index: 100;
+	display: flex;
+	justify-content: flex-end;
+}
+
+.sortPanel {
+	width: 380px;
+	height: 100%;
+	background: rgba(20, 20, 40, 0.92);
+	backdrop-filter: blur(32px) saturate(1.3);
+	-webkit-backdrop-filter: blur(32px) saturate(1.3);
+	padding: 40px 32px;
+	overflow-y: auto;
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+
+	&::-webkit-scrollbar {
+		display: none;
+		width: 0;
+	}
+
+	animation: slideIn 0.25s ease-out;
+	border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@keyframes slideIn {
+	from {
+		transform: translateX(100%);
+	}
+	to {
+		transform: translateX(0);
+	}
+}
+
+.sortPanelTitle {
+	font-size: 32px;
+	font-weight: 700;
+	color: white;
+	margin: 0 0 32px 0;
+}
+
+.sortSection {
+	margin-bottom: 32px;
+}
+
+.filterSection {
+	border-top: 1px solid rgba(255, 255, 255, 0.1);
+	padding-top: 24px;
+}
+
+.sortSectionLabel {
+	font-size: 15px;
+	font-weight: 600;
+	color: rgba(255, 255, 255, 0.45);
+	text-transform: uppercase;
+	letter-spacing: 1px;
+	margin-bottom: 16px;
+}
+
+/* ── Sort / Filter option rows ───────────────────────────── */
+.sortOption {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	background: none;
+	border: 2px solid transparent;
+	border-radius: 8px;
+	padding: 14px 16px;
+	color: rgba(255, 255, 255, 0.8);
+	font-size: 18px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+
+	& + & {
+		margin-top: 4px;
+	}
+
+	&:focus {
+		outline: none;
+		background: rgba(255, 255, 255, 0.1);
+		border-color: @accent;
+		color: white;
+	}
+
+	&.sortOptionActive {
+		color: white;
+	}
+}
+
+.sortOptionLabel {
+	margin-left: 14px;
+	font-weight: 500;
+}
+
+/* Radio circle */
+.radioCircle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	min-width: 22px;
+	border-radius: 50%;
+	border: 2px solid rgba(255, 255, 255, 0.35);
+	transition: border-color 0.15s ease;
+
+	.sortOptionActive & {
+		border-color: @accent;
+	}
+}
+
+.radioFill {
+	display: block;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: @accent;
+}
+
+/* Checkbox square */
+.checkboxSquare {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	min-width: 22px;
+	border-radius: 4px;
+	border: 2px solid rgba(255, 255, 255, 0.35);
+	transition: all 0.15s ease;
+	background: none;
+
+	.sortOptionActive & {
+		border-color: @accent;
+		background: @accent;
+	}
+}
+
+.checkIcon {
+	width: 16px;
+	height: 16px;
+	fill: white;
+}
+
+/* ── Settings Panel Rows ─────────────────────────────────── */
+.settingsHeader {
+	font-size: 14px;
+	font-weight: 600;
+	color: rgba(255, 255, 255, 0.4);
+	text-transform: uppercase;
+	letter-spacing: 1.5px;
+	margin-bottom: 4px;
+}
+
+.settingRow {
 	display: flex;
 	flex-direction: column;
-	padding: 30px 40px;
-	min-width: 350px;
-}
-
-.popupOption {
 	width: 100%;
-	margin-top: 15px;
+	background: none;
+	border: 2px solid transparent;
+	border-radius: 8px;
+	padding: 18px 16px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+	text-align: left;
+
+	& + & {
+		margin-top: 4px;
+	}
+
+	&:focus {
+		outline: none;
+		background: rgba(255, 255, 255, 0.1);
+		border-color: @accent;
+	}
 }
 
-.modalTitle {
-	font-size: 32px;
+.settingLabel {
+	font-size: 19px;
 	font-weight: 600;
 	color: white;
-	margin-bottom: 10px;
-	text-align: center;
+}
+
+.settingValue {
+	font-size: 16px;
+	color: rgba(255, 255, 255, 0.55);
+	margin-top: 4px;
 }

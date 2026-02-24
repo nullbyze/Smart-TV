@@ -303,6 +303,15 @@ export const api = {
 		request(`/Users/${currentUser}/Items/${itemId}?Fields=Overview,MediaStreams,Chapters`),
 
 	// Music API methods
+	getAlbumArtists: (params = {}) => {
+		const query = new URLSearchParams({
+			userId: currentUser,
+			Recursive: 'true',
+			...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))
+		});
+		return request(`/Artists/AlbumArtists?${query.toString()}`);
+	},
+
 	getAlbumsByArtist: (artistId, limit = 100) =>
 		request(`/Users/${currentUser}/Items?AlbumArtistIds=${artistId}&IncludeItemTypes=MusicAlbum&Recursive=true&SortBy=ProductionYear,SortName&SortOrder=Descending&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear`),
 
@@ -472,6 +481,15 @@ export const createApiForServer = (serverUrl, token, userId) => {
 		}),
 
 		// Music API methods
+		getAlbumArtists: (params = {}) => {
+			const query = new URLSearchParams({
+				userId: userId,
+				Recursive: 'true',
+				...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))
+			});
+			return serverRequest(`/Artists/AlbumArtists?${query.toString()}`);
+		},
+
 		getAlbumsByArtist: (artistId, limit = 100) =>
 			serverRequest(`/Users/${userId}/Items?AlbumArtistIds=${artistId}&IncludeItemTypes=MusicAlbum&Recursive=true&SortBy=ProductionYear,SortName&SortOrder=Descending&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear`),
 

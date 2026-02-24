@@ -587,6 +587,7 @@ const AppContent = (props) => {
 
 	const showNavBar = panelIndex !== PANELS.LOGIN &&
 		panelIndex !== PANELS.PLAYER &&
+		panelIndex !== PANELS.LIBRARY &&
 		panelIndex !== PANELS.ADD_SERVER &&
 		panelIndex !== PANELS.ADD_USER;
 
@@ -649,8 +650,8 @@ const AppContent = (props) => {
 							<Library
 								library={selectedLibrary}
 								onSelectItem={handleSelectItem}
-								onViewPhoto={handleViewPhoto}
-							backHandlerRef={backHandlerRef}
+								onViewPhoto={handleViewPhoto}							onHome={handleHome}
+								backHandlerRef={backHandlerRef}
 						/>
 						)}
 					</Panel>

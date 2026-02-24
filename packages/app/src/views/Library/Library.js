@@ -3,12 +3,13 @@ import Spottable from '@enact/spotlight/Spottable';
 import SpotlightContainerDecorator from '@enact/spotlight/SpotlightContainerDecorator';
 import Spotlight from '@enact/spotlight';
 import {VirtualGridList} from '@enact/sandstone/VirtualList';
-import Popup from '@enact/sandstone/Popup';
-import Button from '@enact/sandstone/Button';
 import {useAuth} from '../../context/AuthContext';
 import {createApiForServer} from '../../services/jellyfinApi';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import {getImageUrl, getPrimaryImageId} from '../../utils/helpers';
+import {getImageUrl, getPrimaryImageId, formatDuration} from '../../utils/helpers';
+import {useSettings} from '../../context/SettingsContext';
+import {fetchRatings, buildDisplayRatings} from '../../services/mdblistApi';
+import {useStorage} from '../../hooks/useStorage';
 import {KEYS} from '../../utils/keys';
 
 import css from './Library.module.less';
@@ -17,30 +18,41 @@ const SpottableDiv = Spottable('div');
 const SpottableButton = Spottable('button');
 const ToolbarContainer = SpotlightContainerDecorator({enterTo: 'last-focused', restrict: 'self-first'}, 'div');
 const GridContainer = SpotlightContainerDecorator({enterTo: 'last-focused', restrict: 'self-only'}, 'div');
+const SortPanelContainer = SpotlightContainerDecorator({enterTo: 'last-focused', restrict: 'self-only'}, 'div');
+const SettingsPanelContainer = SpotlightContainerDecorator({enterTo: 'last-focused', restrict: 'self-only'}, 'div');
+
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 const SORT_OPTIONS = [
-{key: 'SortName,Ascending', label: 'Name (A-Z)'},
-{key: 'SortName,Descending', label: 'Name (Z-A)'},
-{key: 'CommunityRating,Descending', label: 'Rating'},
-{key: 'DateCreated,Descending', label: 'Date Added'},
-{key: 'PremiereDate,Descending', label: 'Release Date'},
-{key: 'Random,Ascending', label: 'Random'}
+	{key: 'SortName', field: 'SortName', order: 'Ascending', label: 'Name'},
+	{key: 'DateCreated', field: 'DateCreated', order: 'Descending', label: 'Date Added'},
+	{key: 'PremiereDate', field: 'PremiereDate', order: 'Descending', label: 'Premiere Date'},
+	{key: 'OfficialRating', field: 'OfficialRating', order: 'Ascending', label: 'Rating'},
+	{key: 'CommunityRating', field: 'CommunityRating', order: 'Descending', label: 'Community Rating'},
+	{key: 'CriticRating', field: 'CriticRating', order: 'Descending', label: 'Critic Rating'},
+	{key: 'DatePlayed', field: 'DatePlayed', order: 'Descending', label: 'Last Played'},
+	{key: 'Runtime', field: 'Runtime', order: 'Ascending', label: 'Runtime'}
 ];
 
-const FILTER_OPTIONS = [
-{key: 'all', label: 'All'},
-{key: 'Favorites', label: 'Favorites'},
-{key: 'Unplayed', label: 'Unplayed'},
-{key: 'Played', label: 'Played'},
-{key: 'Resumable', label: 'Resumable'}
+const MUSIC_SORT_OPTIONS = [
+	{key: 'SortName', field: 'SortName', order: 'Ascending', label: 'Name'},
+	{key: 'DateCreated', field: 'DateCreated', order: 'Descending', label: 'Date Added'},
+	{key: 'CommunityRating', field: 'CommunityRating', order: 'Descending', label: 'Community Rating'},
+	{key: 'DatePlayed', field: 'DatePlayed', order: 'Descending', label: 'Last Played'},
+	{key: 'AlbumArtist', field: 'AlbumArtist,SortName', order: 'Ascending', label: 'Album Artist'}
+];
+
+const MUSIC_CONTENT_TYPES = [
+	{key: 'albums', label: 'Albums', itemType: 'MusicAlbum'},
+	{key: 'artists', label: 'Artists', itemType: 'MusicArtist'}
 ];
 
 const LETTERS = ['#', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
 
-const Library = ({library, onSelectItem, onViewPhoto, backHandlerRef}) => {
+const Library = ({library, onSelectItem, onViewPhoto, onHome, backHandlerRef}) => {
 const {api, serverUrl} = useAuth();
+const {settings} = useSettings();
 
-// Support cross-server libraries
 const effectiveApi = useMemo(() => {
 	if (library?._serverUrl && library?._serverAccessToken) {
 		return createApiForServer(library._serverUrl, library._serverAccessToken, library._serverUserId);
@@ -53,15 +65,25 @@ const effectiveServerUrl = useMemo(() => {
 }, [library, serverUrl]);
 
 const isMusicLibrary = library?.CollectionType?.toLowerCase() === 'music';
+const isPlaylistLibrary = library?.CollectionType?.toLowerCase() === 'playlists';
+const isSquareDefault = isMusicLibrary || isPlaylistLibrary;
 
 const [allItems, setAllItems] = useState([]);
 const [isLoading, setIsLoading] = useState(true);
 const [totalCount, setTotalCount] = useState(0);
-const [sortBy, setSortBy] = useState('SortName,Ascending');
-const [filter, setFilter] = useState('all');
+const [sortKey, setSortKey] = useState('SortName');
+const [favoritesOnly, setFavoritesOnly] = useState(false);
+const [watchedOnly, setWatchedOnly] = useState(false);
+const [musicContentType, setMusicContentType] = useState('albums');
 const [startLetter, setStartLetter] = useState(null);
-const [showSortModal, setShowSortModal] = useState(false);
-const [showFilterModal, setShowFilterModal] = useState(false);
+const [showSortPanel, setShowSortPanel] = useState(false);
+const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+const [focusedItem, setFocusedItem] = useState(null);
+const [focusedRatings, setFocusedRatings] = useState([]);
+const libraryId = library?.Id || 'default';
+const [imageSize, setImageSize] = useStorage(`library_imageSize_${libraryId}`, 'medium');
+const [imageType, setImageType] = useStorage(`library_imageType_${libraryId}`, isSquareDefault ? 'square' : 'poster');
+const [gridDirection, setGridDirection] = useStorage(`library_gridDirection_${libraryId}`, 'vertical');
 
 const loadingMoreRef = useRef(false);
 const apiFetchIndexRef = useRef(0);
@@ -100,7 +122,10 @@ return 'Video,Photo,PhotoAlbum';
 case 'photos':
 return 'Photo,PhotoAlbum';
 case 'music':
-return 'MusicAlbum,MusicArtist';
+		{
+			const mc = MUSIC_CONTENT_TYPES.find(c => c.key === musicContentType);
+			return mc ? mc.itemType : 'MusicAlbum';
+		}
 case 'musicvideos':
 return 'MusicVideo';
 case 'playlists':
@@ -112,7 +137,7 @@ return 'Trailer';
 default:
 return '';
 }
-}, [library]);
+}, [library, musicContentType]);
 
 const getExcludeItemTypes = useCallback(() => {
 if (!library) return '';
@@ -134,18 +159,17 @@ loadingMoreRef.current = true;
 }
 
 try {
-const [sortField, sortOrder] = sortBy.split(',');
-const collectionType = library.CollectionType?.toLowerCase();
+const sortOption = SORT_OPTIONS.find(o => o.key === sortKey) || MUSIC_SORT_OPTIONS.find(o => o.key === sortKey) || SORT_OPTIONS[0];
 
 const params = {
 ParentId: library.Id,
 StartIndex: startIndex,
 Limit: 150,
-SortBy: sortField,
-SortOrder: sortOrder,
+SortBy: sortOption.field,
+SortOrder: sortOption.order,
 Recursive: true,
 EnableTotalRecordCount: true,
-Fields: 'ProductionYear,ImageTags'
+Fields: 'ProductionYear,ImageTags,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,ProviderIds,UserData'
 };
 
 const itemTypes = getItemTypeForLibrary();
@@ -158,23 +182,32 @@ if (excludeTypes) {
 params.ExcludeItemTypes = excludeTypes;
 }
 
+const collectionType = library.CollectionType?.toLowerCase();
 if (collectionType === 'movies') {
 params.CollapseBoxSetItems = false;
 }
 
-if (filter !== 'all') {
-if (filter === 'Favorites') {
-params.Filters = 'IsFavorite';
-} else if (filter === 'Unplayed') {
-params.Filters = 'IsUnplayed';
-} else if (filter === 'Played') {
-params.Filters = 'IsPlayed';
-} else if (filter === 'Resumable') {
-params.Filters = 'IsResumable';
-}
+const filters = [];
+		if (favoritesOnly) filters.push('IsFavorite');
+		if (watchedOnly) filters.push('IsPlayed');
+		if (filters.length > 0) {
+			params.Filters = filters.join(',');
 }
 
-const result = await effectiveApi.getItems(params);
+const result = isMusicLibrary && musicContentType === 'artists'
+	? await effectiveApi.getAlbumArtists({
+		ParentId: library.Id,
+		StartIndex: startIndex,
+		Limit: 150,
+		SortBy: sortOption.field,
+		SortOrder: sortOption.order,
+		EnableTotalRecordCount: true,
+		Fields: 'PrimaryImageAspectRatio,SortName,ProductionYear,ImageTags,UserData',
+		ImageTypeLimit: 1,
+		EnableImageTypes: 'Primary,Backdrop,Thumb',
+		...(filters.length > 0 ? {Filters: filters.join(',')} : {})
+	})
+	: await effectiveApi.getItems(params);
 let newItems = result.Items || [];
 
 if (excludeTypes && newItems.length > 0) {
@@ -185,13 +218,11 @@ apiFetchIndexRef.current = append ? apiFetchIndexRef.current + (result.Items?.le
 
 setAllItems(prev => append ? [...prev, ...newItems] : newItems);
 setTotalCount(result.TotalRecordCount || 0);
-} catch (err) {
-// Silent fail
-} finally {
+} catch (err) { /* ignore */ } finally {
 setIsLoading(false);
 loadingMoreRef.current = false;
 }
-}, [effectiveApi, library, sortBy, filter, getItemTypeForLibrary, getExcludeItemTypes]);
+}, [effectiveApi, library, sortKey, favoritesOnly, watchedOnly, getItemTypeForLibrary, getExcludeItemTypes]);
 
 useEffect(() => {
 if (library) {
@@ -202,7 +233,7 @@ apiFetchIndexRef.current = 0;
 initialFocusDoneRef.current = false;
 loadItems(0, false);
 }
-}, [library, sortBy, filter, loadItems]);
+}, [library, sortKey, favoritesOnly, watchedOnly, musicContentType, loadItems]);
 
 useEffect(() => {
 if (items.length > 0 && !isLoading && !initialFocusDoneRef.current) {
@@ -249,11 +280,7 @@ setStartLetter(letter === startLetter ? null : letter);
 }, [startLetter]);
 
 const handleToolbarKeyDown = useCallback((e) => {
-if (e.keyCode === KEYS.UP) {
-e.preventDefault();
-e.stopPropagation();
-Spotlight.focus('navbar');
-} else if (e.keyCode === KEYS.DOWN) {
+if (e.keyCode === KEYS.DOWN) {
 e.preventDefault();
 e.stopPropagation();
 Spotlight.focus('library-grid');
@@ -274,47 +301,117 @@ Spotlight.focus('library-letter-hash');
 }
 }, []);
 
-const handleOpenSortModal = useCallback(() => {
-setShowSortModal(true);
+const handleToggleSortPanel = useCallback(() => {
+setShowSortPanel(prev => !prev);
 }, []);
 
-const handleOpenFilterModal = useCallback(() => {
-setShowFilterModal(true);
-}, []);
-
-const handleCloseModal = useCallback(() => {
-setShowSortModal(false);
-setShowFilterModal(false);
+const handleCloseSortPanel = useCallback(() => {
+setShowSortPanel(false);
 }, []);
 
 useEffect(() => {
 	if (!backHandlerRef) return;
 	backHandlerRef.current = () => {
-		if (showSortModal || showFilterModal) {
-			setShowSortModal(false);
-			setShowFilterModal(false);
+		if (showSettingsPanel) {
+			setShowSettingsPanel(false);
+			return true;
+		}
+		if (showSortPanel) {
+			setShowSortPanel(false);
 			return true;
 		}
 		return false;
 	};
 	return () => { if (backHandlerRef) backHandlerRef.current = null; };
-}, [backHandlerRef, showSortModal, showFilterModal]);
+}, [backHandlerRef, showSortPanel, showSettingsPanel]);
+
+useEffect(() => {
+	if (showSortPanel) {
+		setTimeout(() => {
+			Spotlight.focus('sort-option-0');
+		}, 100);
+	}
+}, [showSortPanel]);
+
+useEffect(() => {
+	if (showSettingsPanel) {
+		setTimeout(() => {
+			Spotlight.focus('settings-image-size');
+		}, 100);
+	}
+}, [showSettingsPanel]);
 
 const handleSortSelect = useCallback((ev) => {
 const key = ev.currentTarget?.dataset?.sortKey;
 if (key) {
-setSortBy(key);
-setShowSortModal(false);
+setSortKey(key);
+setShowSortPanel(false);
+setTimeout(() => Spotlight.focus('library-grid'), 100);
 }
 }, []);
 
-const handleFilterSelect = useCallback((ev) => {
-const key = ev.currentTarget?.dataset?.filterKey;
-if (key) {
-setFilter(key);
-setShowFilterModal(false);
-}
+const handleToggleFavorites = useCallback(() => {
+setFavoritesOnly(prev => !prev);
+setShowSortPanel(false);
+setTimeout(() => Spotlight.focus('library-grid'), 100);
 }, []);
+
+const handleToggleWatched = useCallback(() => {
+	setWatchedOnly(prev => !prev);
+	setShowSortPanel(false);
+	setTimeout(() => Spotlight.focus('library-grid'), 100);
+}, []);
+
+const handleToggleSettingsPanel = useCallback(() => {
+	setShowSettingsPanel(prev => !prev);
+}, []);
+
+const handleCloseSettingsPanel = useCallback(() => {
+	setShowSettingsPanel(false);
+}, []);
+
+const handleCycleImageSize = useCallback(() => {
+	const sizes = ['small', 'medium', 'large'];
+	const idx = sizes.indexOf(imageSize);
+	setImageSize(sizes[(idx + 1) % sizes.length]);
+}, [imageSize, setImageSize]);
+
+const handleCycleImageType = useCallback(() => {
+	const types = ['poster', 'thumbnail'];
+	const idx = types.indexOf(imageType);
+	setImageType(types[(idx + 1) % types.length]);
+}, [imageType, setImageType]);
+
+const handleCycleGridDirection = useCallback(() => {
+	const dirs = ['vertical', 'horizontal'];
+	const idx = dirs.indexOf(gridDirection);
+	setGridDirection(dirs[(idx + 1) % dirs.length]);
+}, [gridDirection, setGridDirection]);
+
+const handleMusicContentSelect = useCallback((ev) => {
+	const key = ev.currentTarget?.dataset?.contentKey;
+	if (key) {
+		setMusicContentType(key);
+		setShowSortPanel(false);
+		setTimeout(() => Spotlight.focus('library-grid'), 100);
+	}
+}, []);
+
+const effectiveImageType = isSquareDefault ? 'square' : imageType;
+const isWideImage = effectiveImageType === 'thumbnail';
+const isSquareImage = effectiveImageType === 'square';
+const activeSortOptions = isMusicLibrary ? MUSIC_SORT_OPTIONS : SORT_OPTIONS;
+const posterHeight = isSquareImage
+	? ({small: 140, medium: 180, large: 240}[imageSize] || 180)
+	: isWideImage
+		? ({small: 120, medium: 160, large: 210}[imageSize] || 160)
+		: ({small: 200, medium: 270, large: 350}[imageSize] || 270);
+
+const gridItemSize = isSquareImage
+	? ({small: {minWidth: 130, minHeight: 180}, medium: {minWidth: 170, minHeight: 220}, large: {minWidth: 220, minHeight: 280}}[imageSize] || {minWidth: 170, minHeight: 220})
+	: isWideImage
+		? ({small: {minWidth: 220, minHeight: 170}, medium: {minWidth: 280, minHeight: 220}, large: {minWidth: 360, minHeight: 280}}[imageSize] || {minWidth: 280, minHeight: 220})
+		: ({small: {minWidth: 130, minHeight: 270}, medium: {minWidth: 170, minHeight: 340}, large: {minWidth: 220, minHeight: 430}}[imageSize] || {minWidth: 170, minHeight: 340});
 
 const renderItem = useCallback(({index, ...rest}) => {
 const item = itemsRef.current[index];
@@ -326,51 +423,82 @@ loadItems(apiFetchIndexRef.current, true);
 if (!item) {
 return (
 <div {...rest} className={css.itemCard}>
-<div className={css.posterPlaceholder}>
+<div className={css.posterPlaceholder} style={{height: posterHeight}}>
 <div className={css.loadingPlaceholder} />
 </div>
 </div>
 );
 }
 
-const imageId = getPrimaryImageId(item);
-const imageUrl = imageId ? getImageUrl(effectiveServerUrl, imageId, 'Primary', {maxHeight: 300, quality: 80}) : null;
+let imageId, imgApiType;
+if (effectiveImageType === 'thumbnail') {
+	if (item.ImageTags?.Thumb) {
+		imageId = item.Id;
+		imgApiType = 'Thumb';
+	} else {
+		imageId = getPrimaryImageId(item);
+		imgApiType = 'Primary';
+	}
+} else {
+	imageId = getPrimaryImageId(item);
+	imgApiType = 'Primary';
+}
+const imageUrl = imageId ? getImageUrl(effectiveServerUrl, imageId, imgApiType, {maxHeight: 400, quality: 80}) : null;
 
 return (
 <SpottableDiv
 {...rest}
-className={`${css.itemCard} ${isMusicLibrary ? css.squareCard : ''}`}
+className={`${css.itemCard} ${isSquareImage ? css.squareCard : ''}`}
 onClick={handleItemClick}
+onFocus={() => {
+	setFocusedItem(item);
+	if (settings?.mdblistEnabled && settings?.useMoonfinPlugin) {
+		fetchRatings(effectiveServerUrl, item).then(r => {
+			const display = buildDisplayRatings(r, effectiveServerUrl, settings?.mdblistRatingSources);
+			setFocusedRatings(display);
+		}).catch(() => setFocusedRatings([]));
+	} else {
+		setFocusedRatings([]);
+	}
+}}
 data-index={index}
 >
 {imageUrl ? (
 <img
 className={css.poster}
+style={{height: posterHeight}}
 src={imageUrl}
 alt={item.Name}
 loading="lazy"
 />
 ) : (
-<div className={css.posterPlaceholder}>
+<div className={css.posterPlaceholder} style={{height: posterHeight}}>
 <svg viewBox="0 0 24 24" className={css.placeholderIcon}>
 <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z" />
 </svg>
 </div>
 )}
-<div className={css.itemInfo}>
-<div className={css.itemName}>{item.Name}</div>
-{item.Type === 'MusicAlbum' && item.AlbumArtist ? (
-	<div className={css.itemYear}>{item.AlbumArtist}</div>
-) : item.ProductionYear && (
-<div className={css.itemYear}>{item.ProductionYear}</div>
-)}
+{item.UserData?.IsFavorite && (
+<div className={css.favoriteBadge}>
+<svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
 </div>
+)}
+{item.UserData?.Played && (
+<div className={css.watchedBadge}>
+<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" /></svg>
+</div>
+)}
 </SpottableDiv>
 );
-}, [effectiveServerUrl, handleItemClick, items.length, totalCount, isLoading, loadItems, isMusicLibrary]);
+}, [effectiveServerUrl, handleItemClick, items.length, totalCount, isLoading, loadItems, effectiveImageType, posterHeight, isSquareImage, settings]);
 
-const currentSort = SORT_OPTIONS.find(o => o.key === sortBy);
-const currentFilter = FILTER_OPTIONS.find(o => o.key === filter);
+const currentSort = activeSortOptions.find(o => o.key === sortKey);
+const sortLabel = currentSort?.label || 'Name';
+const filterParts = [];
+if (favoritesOnly) filterParts.push('Favorites');
+if (watchedOnly) filterParts.push('Watched');
+const filterLabel = filterParts.length > 0 ? filterParts.join(' & ') : 'All items';
+const statusText = `Showing ${filterLabel} from '${library?.Name}' sorted by ${sortLabel}`;
 
 if (!library) {
 return (
@@ -380,39 +508,73 @@ return (
 );
 }
 
+const focusedInfoParts = [];
+if (focusedItem) {
+	if (focusedItem.ProductionYear) focusedInfoParts.push(String(focusedItem.ProductionYear));
+	if (focusedItem.OfficialRating) focusedInfoParts.push(focusedItem.OfficialRating);
+	if (focusedItem.RunTimeTicks) focusedInfoParts.push(formatDuration(focusedItem.RunTimeTicks));
+	if (focusedItem.CommunityRating) focusedInfoParts.push('\u2605 ' + focusedItem.CommunityRating.toFixed(1));
+}
+
+const pluginRatingElements = focusedRatings.map((r, i) => (
+	<span key={'r' + i} className={css.pluginRating}>
+		{r.iconUrl && <img className={css.ratingIcon} src={r.iconUrl} alt={r.name} />}
+		<span>{r.formatted}</span>
+	</span>
+));
+
 return (
 <div className={css.page}>
 <div className={css.content}>
 <div className={css.header}>
-<div className={css.titleSection}>
-<div className={css.title}>{library.Name}</div>
-<div className={css.subtitle}>
-{currentSort?.label} • {currentFilter?.label}
-{startLetter && ` • Starting with "${startLetter}"`}
+<div className={css.libraryTitle}>{library.Name}</div>
+<div className={css.itemCount}>{totalCount} Items</div>
 </div>
+
+{focusedItem && (
+<div className={css.focusedInfo}>
+	<div className={css.focusedName}>{focusedItem.Name}</div>
+	<div className={css.focusedMeta}>
+		{focusedInfoParts.map((part, i) => (
+			<span key={i} className={css.metaItem}>{part}</span>
+		))}
+		{pluginRatingElements.length > 0 && focusedInfoParts.length > 0 && (
+			<span className={css.metaSeparator} />
+		)}
+		{pluginRatingElements}
+	</div>
 </div>
-<div className={css.counter}>{totalCount} items</div>
-</div>
+)}
 
 <ToolbarContainer className={css.toolbar} spotlightId="library-toolbar" onKeyDown={handleToolbarKeyDown}>
 <SpottableButton
-className={css.sortButton}
-onClick={handleOpenSortModal}
+className={css.toolbarBtn}
+onClick={onHome}
+spotlightId="library-home-btn"
 >
-<svg viewBox="0 0 24 24">
-<path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z" />
+<svg className={css.toolbarIcon} viewBox="0 0 24 24">
+<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
 </svg>
-{currentSort?.label}
 </SpottableButton>
 
 <SpottableButton
-className={css.filterButton}
-onClick={handleOpenFilterModal}
+className={css.toolbarBtn}
+onClick={handleToggleSortPanel}
+spotlightId="library-sort-btn"
 >
-<svg viewBox="0 0 24 24">
-<path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z" />
+<svg className={css.toolbarIcon} viewBox="0 -960 960 960">
+<path d="m80-280 162-400h63l161 400h-63l-38-99H181l-38 99H80Zm121-151h144l-70-185h-4l-70 185Zm347 151v-62l233-286H566v-52h272v63L607-332h233v52H548ZM384-784l96-96 96 96H384Zm96 704-96-96h192l-96 96Z" />
 </svg>
-{currentFilter?.label}
+</SpottableButton>
+
+<SpottableButton
+className={css.toolbarBtn}
+onClick={handleToggleSettingsPanel}
+spotlightId="library-settings-btn"
+>
+<svg className={css.toolbarIcon} viewBox="0 -960 960 960">
+<path d="m388-80-20-126q-19-7-40-19t-37-25l-118 54-93-164 108-79q-2-9-2.5-20.5T185-480q0-9 .5-20.5T188-521L80-600l93-164 118 54q16-13 37-25t40-18l20-127h184l20 126q19 7 40.5 18.5T669-710l118-54 93 164-108 77q2 10 2.5 21.5t.5 21.5q0 10-.5 21t-2.5 21l108 78-93 164-118-54q-16 13-36.5 25.5T592-206L572-80H388Zm48-60h88l14-112q33-8 62.5-25t53.5-41l106 46 40-72-94-69q4-17 6.5-33.5T715-480q0-17-2-33.5t-7-33.5l94-69-40-72-106 46q-23-26-52-43.5T538-708l-14-112h-88l-14 112q-34 7-63.5 24T306-642l-106-46-40 72 94 69q-4 17-6.5 33.5T245-480q0 17 2.5 33.5T254-413l-94 69 40 72 106-46q24 24 53.5 41t62.5 25l14 112Zm44-210q54 0 92-38t38-92q0-54-38-92t-92-38q-54 0-92 38t-38 92q0 54 38 92t92 38Zm0-130Z" />
+</svg>
 </SpottableButton>
 
 <div className={css.letterNav}>
@@ -442,7 +604,10 @@ spotlightId={index === 0 ? 'library-letter-hash' : undefined}
 className={css.grid}
 dataSize={items.length}
 itemRenderer={renderItem}
-itemSize={isMusicLibrary ? {minWidth: 180, minHeight: 260} : {minWidth: 180, minHeight: 340}}
+itemSize={gridItemSize}
+direction={gridDirection}
+horizontalScrollbar="hidden"
+verticalScrollbar="hidden"
 spacing={20}
 onScrollStop={handleScrollStop}
 onKeyDown={handleGridKeyDown}
@@ -450,53 +615,136 @@ spotlightId="library-grid"
 />
 )}
 </GridContainer>
+
+<div className={css.statusBar}>
+<div className={css.statusText}>{statusText}</div>
+<div className={css.statusCount}>{items.length} | {totalCount}</div>
+</div>
 </div>
 
-<Popup
-open={showSortModal}
-onClose={handleCloseModal}
-position="center"
-scrimType="translucent"
-noAutoDismiss
+{showSortPanel && (
+<div className={css.sortPanelOverlay} onClick={handleCloseSortPanel}>
+<SortPanelContainer
+className={css.sortPanel}
+spotlightId="sort-panel"
+onClick={(e) => e.stopPropagation()}
 >
-<div className={css.popupContent}>
-<div className={css.modalTitle}>Sort By</div>
-{SORT_OPTIONS.map((option) => (
-<Button
+<h2 className={css.sortPanelTitle}>Sort & Filter</h2>
+
+<div className={css.sortSection}>
+<div className={css.sortSectionLabel}>Sort By</div>
+{activeSortOptions.map((option, index) => (
+<SpottableButton
 key={option.key}
-className={css.popupOption}
-selected={sortBy === option.key}
+className={`${css.sortOption} ${sortKey === option.key ? css.sortOptionActive : ''}`}
 onClick={handleSortSelect}
 data-sort-key={option.key}
+spotlightId={`sort-option-${index}`}
 >
-{option.label}
-</Button>
+<span className={css.radioCircle}>
+{sortKey === option.key && <span className={css.radioFill} />}
+</span>
+<span className={css.sortOptionLabel}>{option.label}</span>
+</SpottableButton>
 ))}
 </div>
-</Popup>
 
-<Popup
-open={showFilterModal}
-onClose={handleCloseModal}
-position="center"
-scrimType="translucent"
-noAutoDismiss
+{isMusicLibrary && (
+<div className={css.filterSection}>
+<div className={css.sortSectionLabel}>Show</div>
+{MUSIC_CONTENT_TYPES.map((ct) => (
+<SpottableButton
+key={ct.key}
+className={`${css.sortOption} ${musicContentType === ct.key ? css.sortOptionActive : ''}`}
+onClick={handleMusicContentSelect}
+data-content-key={ct.key}
+spotlightId={`music-content-${ct.key}`}
 >
-<div className={css.popupContent}>
-<div className={css.modalTitle}>Filter</div>
-{FILTER_OPTIONS.map((option) => (
-<Button
-key={option.key}
-className={css.popupOption}
-selected={filter === option.key}
-onClick={handleFilterSelect}
-data-filter-key={option.key}
->
-{option.label}
-</Button>
+<span className={css.radioCircle}>
+{musicContentType === ct.key && <span className={css.radioFill} />}
+</span>
+<span className={css.sortOptionLabel}>{ct.label}</span>
+</SpottableButton>
 ))}
 </div>
-</Popup>
+)}
+
+<div className={css.filterSection}>
+<div className={css.sortSectionLabel}>Filters</div>
+<SpottableButton
+className={`${css.sortOption} ${favoritesOnly ? css.sortOptionActive : ''}`}
+onClick={handleToggleFavorites}
+spotlightId="filter-favorites"
+>
+<span className={css.checkboxSquare}>
+{favoritesOnly && (
+<svg viewBox="0 0 24 24" className={css.checkIcon}>
+<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+</svg>
+)}
+</span>
+<span className={css.sortOptionLabel}>Favorites Only</span>
+</SpottableButton>
+<SpottableButton
+className={`${css.sortOption} ${watchedOnly ? css.sortOptionActive : ''}`}
+onClick={handleToggleWatched}
+spotlightId="filter-watched"
+>
+<span className={css.checkboxSquare}>
+{watchedOnly && (
+<svg viewBox="0 0 24 24" className={css.checkIcon}>
+<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+</svg>
+)}
+</span>
+<span className={css.sortOptionLabel}>Watched Only</span>
+</SpottableButton>
+</div>
+</SortPanelContainer>
+</div>
+)}
+
+{showSettingsPanel && (
+<div className={css.sortPanelOverlay} onClick={handleCloseSettingsPanel}>
+<SettingsPanelContainer
+className={css.sortPanel}
+spotlightId="settings-panel"
+onClick={(e) => e.stopPropagation()}
+>
+<div className={css.settingsHeader}>LIBRARIES</div>
+<h2 className={css.sortPanelTitle}>{library.Name}</h2>
+
+<SpottableButton
+className={css.settingRow}
+onClick={handleCycleImageSize}
+spotlightId="settings-image-size"
+>
+<div className={css.settingLabel}>Image size</div>
+<div className={css.settingValue}>{capitalize(imageSize)}</div>
+</SpottableButton>
+
+{!isSquareDefault && (
+<SpottableButton
+className={css.settingRow}
+onClick={handleCycleImageType}
+spotlightId="settings-image-type"
+>
+<div className={css.settingLabel}>Image type</div>
+<div className={css.settingValue}>{capitalize(imageType)}</div>
+</SpottableButton>
+)}
+
+<SpottableButton
+className={css.settingRow}
+onClick={handleCycleGridDirection}
+spotlightId="settings-grid-direction"
+>
+<div className={css.settingLabel}>Grid direction</div>
+<div className={css.settingValue}>{capitalize(gridDirection)}</div>
+</SpottableButton>
+</SettingsPanelContainer>
+</div>
+)}
 </div>
 );
 };
