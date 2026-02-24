@@ -1,4 +1,3 @@
-/* global tizen */
 import {useState, useCallback, useEffect, lazy, Suspense, useRef} from 'react';
 import ThemeDecorator from '@enact/sandstone/ThemeDecorator';
 import {Panels, Panel} from '@enact/sandstone/Panels';
@@ -17,6 +16,7 @@ import UpdateNotification from '../components/UpdateNotification';
 import NavBar from '../components/NavBar';
 import Sidebar from '../components/Sidebar';
 import AccountModal from '../components/AccountModal';
+import ExitDialog from '../components/ExitDialog';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Screensaver from '../components/Screensaver';
 import PhotoViewer from '../components/PhotoViewer';
@@ -93,6 +93,7 @@ const AppContent = (props) => {
 	const [authChecked, setAuthChecked] = useState(false);
 	const [libraries, setLibraries] = useState([]);
 	const [showAccountModal, setShowAccountModal] = useState(false);
+	const [showExitDialog, setShowExitDialog] = useState(false);
 	const cleanupHandlersRef = useRef(null);
 	const backHandlerRef = useRef(null);
 	const detailsItemStackRef = useRef([]);
@@ -293,18 +294,17 @@ const AppContent = (props) => {
 				e.preventDefault();
 				e.stopPropagation();
 
+				if (showExitDialog) {
+					return;
+				}
+
 				if (showAccountModal) {
 					setShowAccountModal(false);
 					return;
 				}
 
 				if (panelIndex === PANELS.BROWSE || panelIndex === PANELS.LOGIN) {
-					performAppCleanup();
-					if (isTizen() && typeof tizen !== 'undefined') {
-						tizen.application.getCurrentApplication().exit();
-					} else {
-						import('@enact/webos/application').then(m => m.platformBack()).catch(() => {});
-					}
+					setShowExitDialog(true);
 					return;
 				}
 				if (panelIndex === PANELS.PLAYER || panelIndex === PANELS.SETTINGS) {
@@ -326,7 +326,7 @@ const AppContent = (props) => {
 
 		window.addEventListener('keydown', handleKeyDown, true);
 		return () => window.removeEventListener('keydown', handleKeyDown, true);
-	}, [panelIndex, handleBack, performAppCleanup, showAccountModal]);
+	}, [panelIndex, handleBack, performAppCleanup, showAccountModal, showExitDialog]);
 
 	const handleLoggedIn = useCallback(() => {
 		setPanelHistory([]);
@@ -796,6 +796,11 @@ const AppContent = (props) => {
 				onLogout={handleSwitchUser}
 				onAddServer={handleAddServer}
 				onAddUser={handleAddUser}
+			/>
+			<ExitDialog
+				open={showExitDialog}
+				onCancel={() => setShowExitDialog(false)}
+				onExit={performAppCleanup}
 			/>
 			<UpdateNotification
 				updateInfo={updateInfo}
