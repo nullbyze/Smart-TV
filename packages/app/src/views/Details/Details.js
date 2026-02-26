@@ -350,6 +350,8 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 	}, [item, onPlay]);
 
 	const handleTrailer = useCallback(() => {
+		// Trailers disabled — isolating decoder exhaustion issue
+		return;
 		if (item?.LocalTrailerCount > 0) {
 			onPlay?.(item, false, false, true);
 		} else if (item?.RemoteTrailers?.length > 0) {
@@ -410,8 +412,9 @@ const Details = ({itemId, initialItem, onPlay, onSelectItem, onSelectPerson, bac
 		if (trailerVideoRef.current) {
 			try {
 				trailerVideoRef.current.pause();
+				// Do NOT call load() — corrupts Chrome 53 HW decoder.
+				trailerVideoRef.current.src = '';
 				trailerVideoRef.current.removeAttribute('src');
-				trailerVideoRef.current.load();
 			} catch (e) { /* ignore */ }
 		}
 		setTrailerOverlay(null);

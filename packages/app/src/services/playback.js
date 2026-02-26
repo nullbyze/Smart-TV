@@ -269,7 +269,7 @@ const getAutoMaxBitrate = (capabilities) => {
 };
 
 export const getPlaybackInfo = async (itemId, options = {}) => {
-	const deviceProfile = await getJellyfinDeviceProfile();
+	const deviceProfile = options.deviceProfile || await getJellyfinDeviceProfile();
 	const capabilities = await getDeviceCapabilities();
 
 	// Cross-server: use item's server if available
@@ -280,13 +280,20 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 	const maxBitrate = options.maxBitrate > 0 ? options.maxBitrate : getAutoMaxBitrate(capabilities);
 
 	const requestedStartTime = options.startPositionTicks || 0;
+	const subtitleStreamIndex = options.subtitleStreamIndex != null ? options.subtitleStreamIndex : -1;
 	console.log('[playback] getPlaybackInfo called:', {
 		itemId,
 		startPositionTicks: requestedStartTime,
 		maxBitrate,
+		subtitleStreamIndex,
 		enableDirectPlay: options.enableDirectPlay !== false,
 		enableTranscoding: options.enableTranscoding !== false
 	});
+
+	const subProfiles = deviceProfile.SubtitleProfiles;
+	if (subProfiles) {
+		console.log('[playback] SubtitleProfiles sent to server:', subProfiles.map(p => p.Format + ':' + p.Method).join(', '));
+	}
 
 	let playbackInfo = await api.getPlaybackInfo(itemId, {
 		DeviceProfile: deviceProfile,
@@ -296,7 +303,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 		EnableDirectStream: options.enableDirectStream !== false,
 		EnableTranscoding: options.enableTranscoding !== false,
 		AudioStreamIndex: options.audioStreamIndex,
-		SubtitleStreamIndex: options.subtitleStreamIndex,
+		SubtitleStreamIndex: subtitleStreamIndex,
 		MaxStreamingBitrate: maxBitrate,
 		MediaSourceId: options.mediaSourceId
 	});
@@ -304,6 +311,18 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 	if (!playbackInfo.MediaSources?.length) {
 		throw new Error('No playable media source found');
 	}
+
+	const firstSource = playbackInfo.MediaSources[0];
+	console.log('[playback] Server response - MediaSource[0]:', {
+		supportsDirectPlay: firstSource.SupportsDirectPlay,
+		supportsDirectStream: firstSource.SupportsDirectStream,
+		container: firstSource.Container,
+		transcodingUrl: firstSource.TranscodingUrl ? firstSource.TranscodingUrl.substring(0, 200) : 'none',
+		defaultSubtitleStreamIndex: firstSource.DefaultSubtitleStreamIndex,
+		subtitleStreams: (firstSource.MediaStreams || [])
+			.filter(s => s.Type === 'Subtitle')
+			.map(s => ({idx: s.Index, codec: s.Codec, isDefault: s.IsDefault, isExternal: s.IsExternal, deliveryMethod: s.DeliveryMethod}))
+	});
 
 	let mediaSource = selectMediaSource(playbackInfo.MediaSources, capabilities, options);
 
@@ -333,7 +352,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 					EnableDirectStream: options.enableDirectStream !== false,
 					EnableTranscoding: options.enableTranscoding !== false,
 					AudioStreamIndex: compatibleIndex,
-					SubtitleStreamIndex: options.subtitleStreamIndex,
+					SubtitleStreamIndex: subtitleStreamIndex,
 					MaxStreamingBitrate: maxBitrate,
 					MediaSourceId: options.mediaSourceId || mediaSource.Id
 				});
@@ -383,7 +402,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 			EnableDirectStream: false,
 			EnableTranscoding: true,
 			AudioStreamIndex: audioStreamIndex,
-			SubtitleStreamIndex: options.subtitleStreamIndex,
+			SubtitleStreamIndex: subtitleStreamIndex,
 			MaxStreamingBitrate: maxBitrate,
 			MediaSourceId: options.mediaSourceId
 		});
@@ -413,7 +432,7 @@ export const getPlaybackInfo = async (itemId, options = {}) => {
 		startPositionTicks: options.startPositionTicks || 0,
 		capabilities,
 		audioStreamIndex: audioStreamIndex ?? mediaSource.DefaultAudioStreamIndex,
-		subtitleStreamIndex: options.subtitleStreamIndex ?? mediaSource.DefaultSubtitleStreamIndex,
+		subtitleStreamIndex: subtitleStreamIndex,
 		maxBitrate: options.maxBitrate,
 		serverCredentials: creds
 	};

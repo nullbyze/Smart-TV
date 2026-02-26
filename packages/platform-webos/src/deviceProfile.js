@@ -90,6 +90,16 @@ export const testVp9Support = (lunaResult = null, webosVersion = 4) => {
 	return webosVersion >= 4;
 };
 
+// Runtime check: does the platform's media pipeline actually handle HLS?
+// Real webOS TVs with Starfish return "maybe"/"probably".
+// Emulators/VMs without Starfish return "" (Chromium alone can't play HLS).
+export const canPlayNativeHls = () => {
+	if (typeof document === 'undefined') return false;
+	const video = document.createElement('video');
+	return !!(video.canPlayType('application/x-mpegURL').replace(/no/, '')
+		|| video.canPlayType('application/vnd.apple.mpegURL').replace(/no/, ''));
+};
+
 // Per LG developer documentation, DTS support varies by webOS version AND container:
 //   webOS 4/4.5: DTS in AVI + MKV (unconditionally supported)
 //   webOS 5/6/22: DTS in MKV only
@@ -215,11 +225,10 @@ export const getDeviceCapabilities = async () => {
 
 		...containerSupport,
 
-		// HLS support details:
-		// - All versions: Native HLS with AES128 encryption
-		// - webOS 5+: fMP4 segments, AC3 audio
 		nativeHls: containerSupport.hls,
-		nativeHlsFmp4: webosVersion >= 5,
+		hasNativeHls: canPlayNativeHls(),
+		// fMP4 HLS segments used for DV-capable TVs to preserve RPU metadata
+		nativeHlsFmp4: cfg['tv.model.supportDolbyVisionHDR'] === true,
 		hlsAc3: webosVersion >= 5,
 		hlsByteRange: webosVersion >= 4,
 
@@ -305,22 +314,22 @@ const buildDirectPlayProfiles = (caps) => {
 	if (caps.eac3) mp4AudioCodecs.push('eac3');
 	if (dts.mp4) mp4AudioCodecs.push('dca', 'dts');
 
-	// MKV: ac3, eac3, aac, pcm, mp3, opus (24+), dts (all versions per LG docs)
+	// MKV: ac3, eac3, aac, mp2, pcm, mp3, opus (24+), dts (all versions per LG docs)
 	// FLAC and Vorbis are NOT listed in MKV by LG docs (standalone formats only)
-	const mkvAudioCodecs = ['aac', 'mp3', 'pcm_s16le', 'pcm_s24le'];
+	const mkvAudioCodecs = ['aac', 'mp2', 'mp3', 'pcm_s16le', 'pcm_s24le'];
 	if (caps.ac3) mkvAudioCodecs.push('ac3');
 	if (caps.eac3) mkvAudioCodecs.push('eac3');
 	if (dts.mkv) mkvAudioCodecs.push('dca', 'dts');
 	if (caps.webosVersion >= 24) mkvAudioCodecs.push('opus');
 
-	// TS: ac3, eac3, aac, pcm, mp3; DTS only on webOS 23+ (model-specific)
-	const tsAudioCodecs = ['aac', 'mp3', 'pcm_s16le', 'pcm_s24le'];
+	// TS: ac3, eac3, aac, mp2, pcm, mp3; DTS only on webOS 23+ (model-specific)
+	const tsAudioCodecs = ['aac', 'mp2', 'mp3', 'pcm_s16le', 'pcm_s24le'];
 	if (caps.ac3) tsAudioCodecs.push('ac3');
 	if (caps.eac3) tsAudioCodecs.push('eac3');
 	if (dts.ts) tsAudioCodecs.push('dca', 'dts');
 
-	// AVI: ac3, mp3, lpcm, adpcm; DTS only on webOS 4/4.5
-	const aviAudioCodecs = ['mp3', 'pcm_s16le', 'pcm_s24le'];
+	// AVI: ac3, mp2, mp3, lpcm, adpcm; DTS only on webOS 4/4.5
+	const aviAudioCodecs = ['mp2', 'mp3', 'pcm_s16le', 'pcm_s24le'];
 	if (caps.ac3) aviAudioCodecs.push('ac3');
 	if (dts.avi) aviAudioCodecs.push('dca', 'dts');
 
@@ -367,9 +376,10 @@ const buildDirectPlayProfiles = (caps) => {
 	}
 
 	if (caps.ts) {
+		// TS per LG docs: H.264, HEVC, MPEG-2; VC-1 is only documented in ASF/WMV
 		const tsVideoCodecs = ['h264'];
 		if (caps.hevc) tsVideoCodecs.push('hevc');
-		tsVideoCodecs.push('vc1', 'mpeg2video');
+		tsVideoCodecs.push('mpeg2video');
 
 		profiles.push({
 			Container: 'ts,mpegts',
@@ -379,25 +389,30 @@ const buildDirectPlayProfiles = (caps) => {
 		});
 	}
 
+	// M2TS (Blu-ray transport stream): H.264, HEVC (UHD Blu-ray), VC-1, MPEG-2
+	const m2tsVideoCodecs = ['h264', 'vc1', 'mpeg2video'];
+	if (caps.hevc) m2tsVideoCodecs.push('hevc');
+
 	profiles.push({
 		Container: 'm2ts',
 		Type: 'Video',
-		VideoCodec: 'h264,vc1,mpeg2video',
+		VideoCodec: m2tsVideoCodecs.join(','),
 		AudioCodec: tsAudioCodecs.join(',')
 	});
 
 	if (caps.asf || caps.wmv) {
+		// ASF/WMV per LG docs: VC-1 (Advanced/Simple/Main), WMA
 		profiles.push({
 			Container: 'asf',
 			Type: 'Video',
-			VideoCodec: '',
-			AudioCodec: ''
+			VideoCodec: 'vc1',
+			AudioCodec: 'wmav2,wmapro'
 		});
 		profiles.push({
 			Container: 'wmv',
 			Type: 'Video',
-			VideoCodec: '',
-			AudioCodec: ''
+			VideoCodec: 'vc1',
+			AudioCodec: 'wmav2,wmapro'
 		});
 	}
 
@@ -414,11 +429,25 @@ const buildDirectPlayProfiles = (caps) => {
 	}
 
 	if (caps.mpg) {
+		// MPG/MPEG per LG docs: MPEG-1, MPEG-2 video; MP2, MP3 audio
 		profiles.push({
 			Container: 'mpg,mpeg',
 			Type: 'Video',
-			VideoCodec: '',
-			AudioCodec: ''
+			VideoCodec: 'mpeg1video,mpeg2video',
+			AudioCodec: 'mp2,mp3'
+		});
+	}
+
+	// VOB per LG docs: supported on all webOS versions (MPEG-2 + MP2/AC3 audio)
+	if (caps.vob) {
+		const vobAudioCodecs = ['mp2'];
+		if (caps.ac3) vobAudioCodecs.push('ac3');
+
+		profiles.push({
+			Container: 'vob',
+			Type: 'Video',
+			VideoCodec: 'mpeg2video',
+			AudioCodec: vobAudioCodecs.join(',')
 		});
 	}
 
@@ -484,45 +513,66 @@ export const getJellyfinDeviceProfile = async () => {
 	const maxAudioChannels = caps.dolbyAtmos ? '8' : '6';
 
 	console.log('[deviceProfile] Video Range Types:', videoRangeTypes, '(hdr10:', caps.hdr10, 'hlg:', caps.hlg, 'dolbyVision:', caps.dolbyVision, ')');
-	console.log('[deviceProfile] DirectPlayProfiles:', directPlayProfiles);
+	console.log('[deviceProfile] DirectPlayProfiles:', directPlayProfiles.length, 'profiles');
+	console.log('[deviceProfile] hasNativeHls:', caps.hasNativeHls);
 
-	// Transcoding profiles — native HLS for all webOS versions
+	// Transcoding profiles — strategy depends on whether native HLS is available:
+	// Starfish present (real TV): HEVC preferred, full audio, surround
+	// No Starfish (emulator/VM): hls.js/MSE — H.264 + AAC only (Chrome 68 MSE limits)
+	//
+	// Container choice for HLS segments:
+	// - DV-capable TVs use fMP4 segments ('mp4') so FFmpeg preserves Dolby Vision
+	//   RPU metadata during audio-only transcodes. MPEG-TS muxing strips RPU NALs,
+	//   causing DV content to fall back to plain HDR10.
+	// - Non-DV TVs use MPEG-TS ('ts') which has broader compatibility.
+	const hlsContainer = caps.dolbyVision ? 'mp4' : 'ts';
 	let transcodingProfiles;
 
-	console.log('[deviceProfile] Using HLS transcoding for webOS', caps.webosVersion);
-	// Use fMP4 segments on webOS 5+ to preserve Dolby Vision metadata (RPU).
-	// MPEG-TS cannot carry DV RPU, causing black screen when DV content
-	// needs audio transcoding. fMP4 HLS is supported on webOS 5+.
-	const hlsContainer = caps.nativeHlsFmp4 ? 'mp4' : 'ts';
-	const hlsAudioCodecs = caps.eac3 ? 'aac,mp2,ac3,eac3' : (caps.ac3 ? 'aac,mp2,ac3' : 'aac,mp2');
+	if (caps.hasNativeHls) {
+		const hlsAudioCodecs = caps.eac3 ? 'aac,mp2,ac3,eac3' : (caps.ac3 ? 'aac,mp2,ac3' : 'aac,mp2');
+		console.log('[deviceProfile] Using native Starfish HLS transcoding — HEVC + full audio, container:', hlsContainer);
+		transcodingProfiles = [
+			...(caps.hevc ? [{
+				Container: hlsContainer,
+				Type: 'Video',
+				AudioCodec: hlsAudioCodecs,
+				VideoCodec: 'hevc',
+				Context: 'Streaming',
+				Protocol: 'hls',
+				MaxAudioChannels: maxAudioChannels,
+				MinSegments: '1',
+				BreakOnNonKeyFrames: false
+			}] : []),
+			{
+				Container: hlsContainer,
+				Type: 'Video',
+				AudioCodec: hlsAudioCodecs,
+				VideoCodec: 'h264',
+				Context: 'Streaming',
+				Protocol: 'hls',
+				MaxAudioChannels: maxAudioChannels,
+				MinSegments: '1',
+				BreakOnNonKeyFrames: false
+			},
+		];
+	} else {
+		console.log('[deviceProfile] No native HLS — using hls.js/MSE transcoding — H.264 + AAC only');
+		transcodingProfiles = [
+			{
+				Container: hlsContainer,
+				Type: 'Video',
+				AudioCodec: 'aac',
+				VideoCodec: 'h264',
+				Context: 'Streaming',
+				Protocol: 'hls',
+				MaxAudioChannels: '2',
+				MinSegments: '1',
+				BreakOnNonKeyFrames: false
+			},
+		];
+	}
 
-	transcodingProfiles = [
-		// HEVC HLS transcoding preserves HDR when transcoding is necessary
-		// (e.g., burn-in subtitles, no compatible audio at all).
-		// Placed first so Jellyfin prefers HEVC over H.264 for HDR content.
-		...(caps.hevc ? [{
-			Container: hlsContainer,
-			Type: 'Video',
-			AudioCodec: hlsAudioCodecs,
-			VideoCodec: 'hevc',
-			Context: 'Streaming',
-			Protocol: 'hls',
-			MaxAudioChannels: maxAudioChannels,
-			MinSegments: '1',
-			BreakOnNonKeyFrames: false
-		}] : []),
-		// H.264 HLS fallback — used when HEVC transcoding is not needed or not possible
-		{
-			Container: hlsContainer,
-			Type: 'Video',
-			AudioCodec: hlsAudioCodecs,
-			VideoCodec: 'h264',
-			Context: 'Streaming',
-			Protocol: 'hls',
-			MaxAudioChannels: maxAudioChannels,
-			MinSegments: '1',
-			BreakOnNonKeyFrames: false
-		},
+	transcodingProfiles.push(
 		{
 			Container: 'mp4',
 			Type: 'Video',
@@ -544,7 +594,7 @@ export const getJellyfinDeviceProfile = async () => {
 			Context: 'Streaming',
 			Protocol: 'http'
 		}
-	];
+	);
 
 	// H.264 level based on webOS version and panel resolution
 	// Per LG docs: webOS 4+ UHD models support H.264 Level 5.1 at 3840x2160@30P
@@ -640,7 +690,7 @@ export const getJellyfinDeviceProfile = async () => {
 				{
 					Condition: 'LessThanEqual',
 					Property: 'VideoLevel',
-					Value: '15',
+				Value: caps.uhd8K ? '19' : '15',
 					IsRequired: false
 				}
 			]
@@ -662,8 +712,8 @@ export const getJellyfinDeviceProfile = async () => {
 	const subtitleProfiles = [
 		{Format: 'vtt', Method: 'External'},
 		{Format: 'srt', Method: 'External'},
-		{Format: 'ass', Method: 'Encode'},
-		{Format: 'ssa', Method: 'Encode'},
+		{Format: 'ass', Method: 'External'},
+		{Format: 'ssa', Method: 'External'},
 		{Format: 'sub', Method: 'Encode'},
 		{Format: 'smi', Method: 'Encode'},
 		{Format: 'ttml', Method: 'External'},
@@ -709,6 +759,48 @@ export const getJellyfinDeviceProfile = async () => {
 	};
 };
 
+/** H.264+AAC-only profile for hls.js/MSE fallback when native HEVC decoding fails. */
+export const getH264FallbackProfile = async () => {
+	const profile = await getJellyfinDeviceProfile();
+
+	profile.TranscodingProfiles = [
+		{
+			Container: 'ts',
+			Type: 'Video',
+			AudioCodec: 'aac',
+			VideoCodec: 'h264',
+			Context: 'Streaming',
+			Protocol: 'hls',
+			MaxAudioChannels: '2',
+			MinSegments: '1',
+			BreakOnNonKeyFrames: false
+		},
+		{
+			Container: 'mp4',
+			Type: 'Video',
+			AudioCodec: 'aac,ac3',
+			VideoCodec: 'h264',
+			Context: 'Static'
+		},
+		{
+			Container: 'mp3',
+			Type: 'Audio',
+			AudioCodec: 'mp3',
+			Context: 'Streaming',
+			Protocol: 'http'
+		},
+		{
+			Container: 'aac',
+			Type: 'Audio',
+			AudioCodec: 'aac',
+			Context: 'Streaming',
+			Protocol: 'http'
+		}
+	];
+
+	return profile;
+};
+
 export const getDeviceId = () => {
 	let deviceId = localStorage.getItem('moonfin_device_id');
 	if (!deviceId) {
@@ -727,6 +819,7 @@ export default {
 	detectWebOSVersion,
 	getDeviceCapabilities,
 	getJellyfinDeviceProfile,
+	getH264FallbackProfile,
 	getDeviceId,
 	getDeviceName
 };

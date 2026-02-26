@@ -22,6 +22,11 @@ export const getJellyfinDeviceProfile = async (...args) => {
 	return impl.getJellyfinDeviceProfile(...args);
 };
 
+export const getH264FallbackProfile = async (...args) => {
+	await loadImpl();
+	return impl.getH264FallbackProfile ? impl.getH264FallbackProfile(...args) : impl.getJellyfinDeviceProfile(...args);
+};
+
 export const getDeviceId = (...args) => {
 	if (!impl) {
 		const id = localStorage.getItem('moonfin_device_id');

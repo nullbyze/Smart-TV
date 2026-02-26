@@ -1,14 +1,18 @@
 import {useState, useEffect, useCallback, useRef, useMemo} from 'react';
 import Spotlight from '@enact/spotlight';
 import Button from '@enact/sandstone/Button';
+import Hls from 'hls.js';
 import * as playback from '../../services/playback';
 import {getImageUrl} from '../../utils/helpers';
 import {getServerUrl} from '../../services/jellyfinApi';
+import {detectWebOSVersion, getH264FallbackProfile} from '@moonfin/platform-webos/deviceProfile';
 import {
 	initLunaAPI,
 	registerAppStateObserver,
 	keepScreenOn,
 	cleanupVideoElement,
+	waitForDecoderRelease,
+	getSharedVideoElement,
 	setupVisibilityHandler,
 	setupWebOSLifecycle
 } from '@moonfin/platform-webos/video';
@@ -55,8 +59,6 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 	const [hasTriedTranscode, setHasTriedTranscode] = useState(false);
 	const [focusRow, setFocusRow] = useState('top');
 	const [isAudioMode, setIsAudioMode] = useState(false);
-
-	// Audio playlist tracking
 	const audioPlaylistIndex = useMemo(() => {
 		if (!audioPlaylist || !item) return -1;
 		return audioPlaylist.findIndex(t => t.Id === item.Id);
@@ -67,6 +69,8 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 
 	const videoRef = useRef(null);
+	const containerRef = useRef(null);
+	const handlersRef = useRef({});
 	const positionRef = useRef(0);
 	const playSessionRef = useRef(null);
 	const runTimeRef = useRef(0);
@@ -77,9 +81,23 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 	const seekingTranscodeRef = useRef(false);
 	const seekDebounceTimerRef = useRef(null);
 	const isCleaningUpRef = useRef(false);
+	const isHandlingErrorRef = useRef(false);
+	const sourceTransitionRef = useRef(false);
+	const transcodeRetryCountRef = useRef(0);
+	const forceHlsJsRef = useRef(false);
+	const prevItemIdRef = useRef(null);
+	const hlsPlayerRef = useRef(null);
 	const transcodeOffsetTicksRef = useRef(0);
 	const transcodeOffsetDetectedRef = useRef(true);
 	const playbackStartTimeoutRef = useRef(null);
+	const pendingResumeTicksRef = useRef(0);
+
+	const destroyHlsPlayer = () => {
+		if (hlsPlayerRef.current) {
+			hlsPlayerRef.current.destroy();
+			hlsPlayerRef.current = null;
+		}
+	};
 
 	const {topButtons, bottomButtons} = usePlayerButtons({
 		isPaused, audioStreams, subtitleStreams, chapters,
@@ -143,6 +161,7 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 		const handleRelaunch = (params) => {
 			console.log('[Player] App relaunched with params:', params);
+			destroyHlsPlayer();
 			if (videoRef.current) {
 				cleanupVideoElement(videoRef.current);
 			}
@@ -154,6 +173,46 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 		return () => {
 			removeVisibilityHandler();
 			removeWebOSHandler();
+		};
+	}, []);
+
+	// Attach the singleton video element to the container and strip leftover trailer state.
+	useEffect(() => {
+		const video = getSharedVideoElement();
+		videoRef.current = video;
+
+		video.onplaying = null;
+		video.onended = null;
+		video.onerror = null;
+		video.className = '';
+
+		if (containerRef.current && !containerRef.current.contains(video)) {
+			containerRef.current.appendChild(video);
+		}
+
+		const listeners = {
+			loadedmetadata: () => handlersRef.current.onLoadedMetadata?.(),
+			play: () => handlersRef.current.onPlay?.(),
+			pause: () => handlersRef.current.onPause?.(),
+			timeupdate: () => handlersRef.current.onTimeUpdate?.(),
+			waiting: () => handlersRef.current.onWaiting?.(),
+			playing: () => handlersRef.current.onPlaying?.(),
+			ended: () => handlersRef.current.onEnded?.(),
+			error: () => handlersRef.current.onError?.(),
+		};
+
+		for (const [event, handler] of Object.entries(listeners)) {
+			video.addEventListener(event, handler);
+		}
+
+		return () => {
+			for (const [event, handler] of Object.entries(listeners)) {
+				video.removeEventListener(event, handler);
+			}
+			if (containerRef.current && containerRef.current.contains(video)) {
+				containerRef.current.removeChild(video);
+			}
+			videoRef.current = null;
 		};
 	}, []);
 
@@ -172,11 +231,19 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 		const loadMedia = async () => {
 			isCleaningUpRef.current = false;
+			if (prevItemIdRef.current !== item.Id) {
+				transcodeRetryCountRef.current = 0;
+				forceHlsJsRef.current = false;
+				prevItemIdRef.current = item.Id;
+			}
 			setIsLoading(true);
 			setError(null);
+			setHasTriedTranscode(false);
 
 			resetPopups();
 			setNextEpisode(null);
+
+			await waitForDecoderRelease();
 
 			try {
 				const savedPosition = item.UserData?.PlaybackPositionTicks || 0;
@@ -193,7 +260,6 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 					enableDirectPlay: !settings.preferTranscode,
 					enableDirectStream: !settings.preferTranscode,
 					forceDirectPlay: settings.forceDirectPlay,
-					// Cross-server support: pass item for server credential lookup
 					item: item
 				});
 
@@ -206,6 +272,14 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				positionRef.current = startPosition;
 				lastSeekTargetRef.current = null;
 				seekingTranscodeRef.current = false;
+
+				// Defer seek until pipeline is running
+				if (result.playMethod !== 'Transcode' && startPosition > 0) {
+					pendingResumeTicksRef.current = startPosition;
+					console.log('[Player] Pending resume seek:', startPosition, 'ticks (' + (startPosition / 10000000) + 's)');
+				} else {
+					pendingResumeTicksRef.current = 0;
+				}
 
 				if (result.playMethod === 'Transcode' && startPosition > 0) {
 					transcodeOffsetTicksRef.current = startPosition;
@@ -353,12 +427,22 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 		return () => {
 			console.log('[Player] Cleanup running - unmounting or re-rendering');
 
+			if (isCleaningUpRef.current) {
+				console.log('[Player] Skipping cleanup — already handled by handleBack/handleEnded');
+				playback.stopProgressReporting();
+				playback.stopHealthMonitoring();
+				resetPopups();
+				if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+				if (seekDebounceTimerRef.current) clearTimeout(seekDebounceTimerRef.current);
+				return;
+			}
+
 			const videoTime = videoElement ? videoElement.currentTime : 0;
 			const videoTicks = Math.floor(videoTime * 10000000) + transcodeOffsetTicksRef.current;
 			const currentPos = videoTicks > 0 ? videoTicks : positionRef.current;
 
 			const intendedStart = positionRef.current;
-			const playedMeaningfully = videoTicks > 100000000;
+			const playedMeaningfully = videoTicks > 100000000 || videoTicks > intendedStart + 100000000;
 			if (currentPos > 0 && (playedMeaningfully || intendedStart === 0)) {
 				console.log('[Player] Reporting stop at position:', currentPos, 'ticks');
 				playback.reportStop(currentPos);
@@ -378,15 +462,12 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				clearTimeout(seekDebounceTimerRef.current);
 			}
 
-			// Quick sync release — handleBack/handleEnded already did the
-			// full async cleanup.  This is only a safety net for unmount
-			// paths that bypass those handlers (settings change, etc.).
 			isCleaningUpRef.current = true;
+			destroyHlsPlayer();
 			if (videoElement) {
 				try { videoElement.pause(); } catch (e) { /* ignore */ }
+				videoElement.src = '';
 				videoElement.removeAttribute('src');
-				// Do NOT call load() — corrupts Chrome 53 hardware decoder.
-				// DOM removal on unmount releases the decoder naturally.
 			}
 		};
 	}, [item, resume, selectedQuality, settings.maxBitrate, settings.preferTranscode, settings.forceDirectPlay, settings.subtitleMode, settings.skipIntro, initialAudioIndex, initialSubtitleIndex]);
@@ -408,7 +489,15 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 		console.log('[Player] seekInTranscode: requesting new stream at', seekPositionTicks, 'ticks (', seekPositionTicks / 10000000, 's)');
 
+		sourceTransitionRef.current = true;
+
 		try {
+			try {
+				await playback.reportStop(positionRef.current);
+			} catch (e) {
+				console.warn('[Player] seekInTranscode: reportStop failed:', e);
+			}
+
 			const result = await playback.getPlaybackInfo(item.Id, {
 				startPositionTicks: seekPositionTicks,
 				maxBitrate: selectedQuality || settings.maxBitrate,
@@ -424,6 +513,9 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				transcodeOffsetTicksRef.current = seekPositionTicks;
 				transcodeOffsetDetectedRef.current = false;
 
+				// Wait for server to start FFmpeg and produce initial segments
+				await new Promise(resolve => setTimeout(resolve, 1500));
+
 				setMediaUrl(result.url);
 				setPlayMethod(result.playMethod);
 				setMimeType(result.mimeType || 'video/mp4');
@@ -433,14 +525,18 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 			}
 		} catch (err) {
 			console.error('[Player] seekInTranscode failed:', err);
+			sourceTransitionRef.current = false;
 			setError('Failed to seek - please try again');
 		} finally {
 			seekingTranscodeRef.current = false;
+
+			if (lastSeekTargetRef.current !== null && lastSeekTargetRef.current !== seekPositionTicks) {
+				console.log('[Player] seekInTranscode: target changed during seek, re-seeking to', lastSeekTargetRef.current / 10000000, 's');
+				setTimeout(() => seekInTranscode(lastSeekTargetRef.current), 100);
+			}
 		}
 	}, [item, selectedQuality, settings.maxBitrate]);
 
-	// Seek relative to current position with debounced transcode re-requests.
-	// updateSeekPosition: also update the seekbar UI during scrubbing.
 	const seekByOffset = useCallback((deltaSec, updateSeekPosition) => {
 		const baseTime = (playMethod === 'Transcode')
 			? ((lastSeekTargetRef.current != null ? lastSeekTargetRef.current : positionRef.current) / 10000000)
@@ -453,7 +549,6 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 		if (playMethod === 'Transcode') {
 			setCurrentTime(newTime);
 			if (seekDebounceTimerRef.current) clearTimeout(seekDebounceTimerRef.current);
-			seekingTranscodeRef.current = false;
 			seekDebounceTimerRef.current = setTimeout(() => {
 				seekInTranscode(lastSeekTargetRef.current);
 			}, 600);
@@ -475,26 +570,126 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 	useEffect(() => {
 		const video = videoRef.current;
-		console.log('[Player] Video src useEffect - video exists:', !!video, 'mediaUrl:', !!mediaUrl, 'isLoading:', isLoading);
+		console.log('[Player] Video src useEffect - video exists:', !!video, 'mediaUrl:', !!mediaUrl, 'isLoading:', isLoading, 'error:', !!error);
 
-		if (!video || !mediaUrl || isLoading) return;
+		if (!video || !mediaUrl || isLoading || error) return;
 
 		console.log('[Player] Setting video src via ref:', mediaUrl);
 		console.log('[Player] PlayMethod:', playMethod, 'MimeType:', mimeType);
 
-		// Set webOS-specific attributes that React doesn't handle well
-		video.setAttribute('webkit-playsinline', '');
-		video.setAttribute('playsinline', '');
-		video.setAttribute('preload', 'auto');
+		// autoplay must be re-set because hls.js path overrides it to false
+		video.autoplay = true;
 
 		const setSourceAndPlay = () => {
 			console.log('[Player] Setting video source now');
-			video.src = mediaUrl;
 
-			// Start a playback timeout — if no timeupdate fires within 8 seconds,
-			// synthetically trigger the error handler to fall back to transcoding.
-			// Some formats silently fail in the HTML5 <video> element without firing
-			// an error event, resulting in a black screen.
+			destroyHlsPlayer();
+
+			let srcUrl = mediaUrl;
+			const resumeTicks = pendingResumeTicksRef.current;
+			if (resumeTicks > 0 && playMethod !== 'Transcode') {
+				const resumeSec = resumeTicks / 10000000;
+				srcUrl = mediaUrl + '#t=' + resumeSec;
+				console.log('[Player] Appending media fragment #t=' + resumeSec + ' for resume (' + resumeTicks + ' ticks)');
+			}
+
+			const isHls = mimeType === 'application/x-mpegURL' || mediaUrl.includes('.m3u8');
+			const webosVersion = detectWebOSVersion();
+			// forceHlsJsRef overrides native when HEVC decoding already failed
+			const nativeHlsOk = !forceHlsJsRef.current
+				&& !!(video.canPlayType('application/x-mpegURL').replace(/no/, ''));
+			const useHlsJs = isHls && !nativeHlsOk && Hls.isSupported();
+			console.log('[Player] Source type:', { isHls, mimeType, autoplay: video.autoplay, webosVersion, nativeHlsOk, useHlsJs, forceHlsJs: forceHlsJsRef.current });
+
+			if (useHlsJs) {
+				console.log('[Player] Using hls.js for HLS playback (webOS ' + webosVersion + ')');
+				const hls = new Hls({
+					enableWorker: false,
+					lowLatencyMode: false,
+					maxBufferLength: 30,
+					maxMaxBufferLength: 60,
+					startFragPrefetch: true,
+					maxBufferHole: 0.5,
+					nudgeMaxRetry: 5,
+				});
+				hlsPlayerRef.current = hls;
+				let hlsPlayStarted = false;
+				let fragBufferedCount = 0;
+				let stallCount = 0;
+
+				hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+					console.log('[Player] hls.js manifest parsed, levels:', data.levels?.length, 'waiting for first fragment...');
+				});
+
+				hls.on(Hls.Events.FRAG_BUFFERED, () => {
+					fragBufferedCount++;
+					if (hlsPlayStarted) return;
+					if (fragBufferedCount < 2) {
+						console.log('[Player] hls.js fragment buffered (' + fragBufferedCount + '/2), waiting for more data...');
+						return;
+					}
+					hlsPlayStarted = true;
+					console.log('[Player] hls.js ' + fragBufferedCount + ' fragments buffered, starting playback');
+					const p = video.play();
+					if (p && typeof p.then === 'function') {
+						p.then(() => console.log('[Player] hls.js play() resolved'))
+						 .catch(e => {
+							 if (e.name === 'AbortError') {
+								 console.log('[Player] hls.js play() aborted — expected');
+							 } else {
+								 console.error('[Player] hls.js play() rejected:', e);
+							 }
+						 });
+					}
+				});
+
+				hls.on(Hls.Events.FRAG_LOADING, (event, data) => {
+					console.log('[Player] hls.js loading fragment:', data.frag?.sn);
+				});
+
+				hls.on(Hls.Events.ERROR, (event, data) => {
+					console.error('[Player] hls.js error:', data.type, data.details, 'fatal:', data.fatal);
+
+					if (hlsPlayStarted && !data.fatal && (
+						data.details === 'bufferStalledError' ||
+						data.details === 'bufferNudgeOnStall'
+					)) {
+						stallCount++;
+						if (stallCount === 3 && video.currentTime < 1) {
+							console.log('[Player] hls.js persistent stall at', video.currentTime, '— force-seeking to 0.5s');
+							video.currentTime = 0.5;
+						} else if (stallCount === 6 && video.currentTime < 2) {
+							console.log('[Player] hls.js still stalling at', video.currentTime, '— recovering media error');
+							hls.recoverMediaError();
+						}
+					}
+
+					if (data.fatal) {
+						switch (data.type) {
+							case Hls.ErrorTypes.NETWORK_ERROR:
+								console.log('[Player] hls.js fatal network error — attempting recovery');
+								hls.startLoad();
+								break;
+							case Hls.ErrorTypes.MEDIA_ERROR:
+								console.log('[Player] hls.js fatal media error — attempting recovery');
+								hls.recoverMediaError();
+								break;
+							default:
+								console.error('[Player] hls.js unrecoverable error — dispatching error event');
+								video.dispatchEvent(new Event('error'));
+								break;
+						}
+					}
+				});
+
+				video.autoplay = false; // play() called from FRAG_BUFFERED instead
+				hls.attachMedia(video);
+				hls.loadSource(srcUrl);
+			} else {
+				destroyHlsPlayer();
+				video.src = srcUrl;
+			}
+
 			if (playbackStartTimeoutRef.current) {
 				clearTimeout(playbackStartTimeoutRef.current);
 			}
@@ -502,31 +697,48 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				clearTimeout(playbackStartTimeoutRef.current);
 				playbackStartTimeoutRef.current = null;
 				video.removeEventListener('timeupdate', onFirstTimeUpdate);
+				sourceTransitionRef.current = false;
+				transcodeRetryCountRef.current = 0;
+				if (pendingResumeTicksRef.current > 0) {
+					const seekSec = pendingResumeTicksRef.current / 10000000;
+					if (video.currentTime < seekSec * 0.5) {
+						console.log('[Player] #t= fragment did not seek — using currentTime fallback:', seekSec, 's');
+						video.currentTime = seekSec;
+					} else {
+						console.log('[Player] Resume via #t= fragment successful, position:', video.currentTime, 's');
+					}
+					pendingResumeTicksRef.current = 0;
+				}
 			};
 			video.addEventListener('timeupdate', onFirstTimeUpdate);
+			const timeoutMs = useHlsJs ? 30000 : (playMethod === 'Transcode') ? 15000 : 8000;
 			playbackStartTimeoutRef.current = setTimeout(() => {
 				video.removeEventListener('timeupdate', onFirstTimeUpdate);
-				// Check if playback actually started
-				if (video.currentTime === 0 && (video.readyState < 3 || video.paused)) {
-					console.warn('[Player] Playback start timeout — no timeupdate received in 8s, triggering error handler');
+				sourceTransitionRef.current = false;
+				const expectedStart = resumeTicks > 0 ? resumeTicks / 10000000 : 0;
+				const noProgress = expectedStart > 0
+					? (video.currentTime < expectedStart * 0.5 && (video.readyState < 3 || video.paused))
+					: (video.currentTime === 0 && (video.readyState < 3 || video.paused));
+				if (noProgress) {
+					console.warn('[Player] Playback start timeout — no timeupdate received in ' + (timeoutMs / 1000) + 's, triggering error handler');
 					console.warn('[Player] Video state:', { readyState: video.readyState, networkState: video.networkState, paused: video.paused, currentSrc: video.currentSrc });
 					video.dispatchEvent(new Event('error'));
 				}
-			}, 8000);
+			}, timeoutMs);
 
-			const playResult = video.play();
-			if (playResult && typeof playResult.then === 'function') {
-				playResult.then(() => {
-					console.log('[Player] play() promise resolved');
-				}).catch(err => {
-					// "interrupted by a new load request" is normal during source
-					// transitions (e.g. DirectPlay → Transcode fallback).
-					if (err.name === 'AbortError') {
-						console.log('[Player] play() aborted (source transition) — expected');
-					} else {
-						console.error('[Player] play() promise rejected:', err);
-					}
-				});
+			if (!useHlsJs) {
+				const playResult = video.play();
+				if (playResult && typeof playResult.then === 'function') {
+					playResult.then(() => {
+						console.log('[Player] play() promise resolved');
+					}).catch(err => {
+						if (err.name === 'AbortError') {
+							console.log('[Player] play() aborted (source transition) — expected');
+						} else {
+							console.error('[Player] play() promise rejected:', err);
+						}
+					});
+				}
 			}
 		};
 
@@ -537,15 +749,15 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				clearTimeout(playbackStartTimeoutRef.current);
 				playbackStartTimeoutRef.current = null;
 			}
+			destroyHlsPlayer();
 		};
-	}, [mediaUrl, isLoading, mimeType, playMethod]);
+	}, [mediaUrl, isLoading, mimeType, playMethod, error]);
 
 	const showControls = useCallback(() => {
 		setControlsVisible(true);
 		if (controlsTimeoutRef.current) {
 			clearTimeout(controlsTimeoutRef.current);
 		}
-		// Don't auto-hide controls in audio mode
 		if (!isAudioMode) {
 			controlsTimeoutRef.current = setTimeout(() => {
 				if (!activeModal) {
@@ -706,15 +918,17 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 	}, []);
 
 	const handleEnded = useCallback(async () => {
+		if (sourceTransitionRef.current) {
+			console.log('[Player] Ignoring ended event during source transition (seek)');
+			return;
+		}
+
 		await playback.reportStop(positionRef.current);
 
-		// Cleanup video element before navigating to next episode or exiting.
-		// Await ensures HW decoder is fully released before new media loads.
 		isCleaningUpRef.current = true;
+		destroyHlsPlayer();
 		await cleanupVideoElement(videoRef.current);
-		isCleaningUpRef.current = false;
 
-		// Auto-advance to next track in audio playlist
 		if (hasNextTrack && onPlayNext) {
 			onPlayNext(audioPlaylist[audioPlaylistIndex + 1]);
 		} else if (nextEpisode && onPlayNext) {
@@ -731,9 +945,21 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 			return;
 		}
 
+		if (sourceTransitionRef.current) {
+			console.log('[Player] Ignoring error during source transition (seek)');
+			return;
+		}
+
+		if (isHandlingErrorRef.current) {
+			console.log('[Player] Ignoring re-entrant error (cleanup in progress)');
+			return;
+		}
+		isHandlingErrorRef.current = true;
+
 		const video = videoRef.current;
 		let errorMessage = 'Playback failed.';
 
+		try {
 		if (video?.error) {
 			switch (video.error.code) {
 				case 1:
@@ -765,8 +991,14 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 		}
 
 		if (!hasTriedTranscode && playMethod !== playback.PlayMethod.Transcode) {
+			// Tier 1 → DirectPlay failed, try native HEVC transcode (Starfish)
 			console.log('[Player] DirectPlay failed, falling back to transcode...');
 			setHasTriedTranscode(true);
+
+			pendingResumeTicksRef.current = 0;
+
+			destroyHlsPlayer();
+			await cleanupVideoElement(videoRef.current);
 
 			try {
 				const result = await playback.getPlaybackInfo(item.Id, {
@@ -775,15 +1007,11 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 					enableDirectPlay: false,
 					enableDirectStream: false,
 					enableTranscoding: true,
-					// Cross-server support: pass item for server credential lookup
 					item: item
 				});
 
 				if (result.url) {
-					// Give the server a moment to prepare the transcode stream
-					console.log('[Player] Waiting for transcode to initialize...');
-					await new Promise(resolve => setTimeout(resolve, 1500));
-
+					console.log('[Player] Switching to transcode on same element...');
 					setMediaUrl(result.url);
 					setPlayMethod(result.playMethod);
 					setMimeType(result.mimeType || 'video/mp4');
@@ -794,10 +1022,62 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 				console.error('[Player] Transcode fallback failed:', fallbackErr);
 				errorMessage = 'Transcoding failed. The server may not support this format.';
 			}
+		} else if (playMethod === 'Transcode' && (!forceHlsJsRef.current || transcodeRetryCountRef.current < 1) && Hls.isSupported()) {
+			// Tier 2: native HEVC transcode failed → switch to hls.js H.264+AAC
+			// Tier 3: hls.js H.264 retry (one attempt)
+			const isTier2 = !forceHlsJsRef.current;
+			if (!isTier2) transcodeRetryCountRef.current++;
+			console.log('[Player]', isTier2 ? 'Native transcode failed — switching to hls.js H.264' : 'hls.js H.264 failed, retrying...');
+
+			try {
+				await playback.reportStop(positionRef.current);
+				destroyHlsPlayer();
+				await cleanupVideoElement(videoRef.current);
+
+				const h264Profile = await getH264FallbackProfile();
+				const result = await playback.getPlaybackInfo(item.Id, {
+					startPositionTicks: positionRef.current,
+					maxBitrate: selectedQuality || settings.maxBitrate,
+					enableDirectPlay: false,
+					enableDirectStream: false,
+					enableTranscoding: true,
+					deviceProfile: h264Profile,
+					item: item
+				});
+
+				if (result.url) {
+					if (isTier2) forceHlsJsRef.current = true;
+					console.log('[Player] H.264 fallback URL:', result.url.substring(0, 200));
+					setMediaUrl(result.url);
+					setPlayMethod(result.playMethod);
+					setMimeType(result.mimeType || 'application/x-mpegURL');
+					playSessionRef.current = result.playSessionId;
+					return;
+				}
+			} catch (fallbackErr) {
+				console.error('[Player] H.264 fallback failed:', fallbackErr);
+				errorMessage = isTier2 ? 'H.264 transcoding fallback failed.' : 'Transcoding failed after retry. Try restarting the app.';
+			}
 		}
 
 		setError(errorMessage);
+		} finally {
+			isHandlingErrorRef.current = false;
+		}
 	}, [hasTriedTranscode, playMethod, item, selectedQuality, settings.maxBitrate]);
+
+	useEffect(() => {
+		handlersRef.current = {
+			onLoadedMetadata: handleLoadedMetadata,
+			onPlay: handlePlay,
+			onPause: handlePause,
+			onTimeUpdate: handleTimeUpdate,
+			onWaiting: handleWaiting,
+			onPlaying: handlePlaying,
+			onEnded: handleEnded,
+			onError: handleError,
+		};
+	}, [handleLoadedMetadata, handlePlay, handlePause, handleTimeUpdate, handleWaiting, handlePlaying, handleEnded, handleError]);
 
 	const handleImageError = useCallback((e) => {
 		e.target.style.display = 'none';
@@ -811,8 +1091,8 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 		await playback.reportStop(currentPos);
 
 		isCleaningUpRef.current = true;
+		destroyHlsPlayer();
 		await cleanupVideoElement(videoRef.current);
-		isCleaningUpRef.current = false;
 
 		onBack?.();
 	}, [onBack, cancelNextEpisodeCountdown]);
@@ -889,9 +1169,9 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 		setSelectedAudioIndex(index);
 		closeModal();
 
-		// Reset fallback flag so the DirectPlay→Transcode fallback can trigger again
-		// if the new audio track also fails at the decoder level.
 		setHasTriedTranscode(false);
+		forceHlsJsRef.current = false;
+		transcodeRetryCountRef.current = 0;
 
 		try {
 			// DirectPlay: try native audioTracks API for instant switch without reload
@@ -1206,20 +1486,10 @@ const Player = ({item, resume, initialAudioIndex, initialSubtitleIndex, onEnded,
 
 	return (
 		<div className={css.container} onClick={!isLoading && !error ? showControls : undefined}>
-			{/* Video element always in DOM — webOS 4 needs the element stable before setting src */}
-			<video
-				ref={videoRef}
+			<div
+				ref={containerRef}
 				className={css.videoPlayer}
 				style={isLoading || isAudioMode ? {opacity: 0, pointerEvents: 'none'} : undefined}
-				autoPlay
-				onLoadedMetadata={handleLoadedMetadata}
-				onPlay={handlePlay}
-				onPause={handlePause}
-				onTimeUpdate={handleTimeUpdate}
-				onWaiting={handleWaiting}
-				onPlaying={handlePlaying}
-				onEnded={handleEnded}
-				onError={handleError}
 			/>
 
 			{isLoading && (

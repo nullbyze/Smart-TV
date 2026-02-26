@@ -11,6 +11,7 @@ import * as connectionPool from '../../services/connectionPool';
 import RatingsRow from '../../components/RatingsRow';
 import {KEYS} from '../../utils/keys';
 import {extractYouTubeId, fetchSponsorSegments, fetchVideoStreamUrl, getTrailerStartTime} from '../../services/youtubeTrailer';
+import {getSharedVideoElement, cleanupVideoElement} from '@moonfin/platform-webos/video';
 
 import css from './Browse.module.less';
 
@@ -70,6 +71,8 @@ const Browse = ({
 	const lastFocusedRowRef = useRef(null);
 	const wasVisibleRef = useRef(true);
 	const trailerContainerRef = useRef(null);
+	const trailerVideoRef = useRef(null);
+	const trailerSkipIntervalRef = useRef(null);
 	const trailerStateRef = useRef('idle');
 	const trailerVideoIdRef = useRef(null);
 	const trailerRevealTimerRef = useRef(null);
@@ -928,17 +931,20 @@ const Browse = ({
 			clearTimeout(trailerRevealTimerRef.current);
 			trailerRevealTimerRef.current = null;
 		}
+		if (trailerSkipIntervalRef.current) {
+			clearInterval(trailerSkipIntervalRef.current);
+			trailerSkipIntervalRef.current = null;
+		}
 		setTrailerActive(false);
-		if (trailerContainerRef.current) {
-			const video = trailerContainerRef.current.querySelector('video');
-			if (video) {
-				try {
-					video.pause();
-					video.removeAttribute('src');
-					video.load();
-				} catch (e) { /* ignore */ }
-			}
-			trailerContainerRef.current.innerHTML = '';
+		const video = trailerVideoRef.current;
+		if (video) {
+			try { video.pause(); } catch (e) { /* ignore */ }
+			cleanupVideoElement(video);
+			video.classList.remove(css.trailerVisible);
+			video.classList.remove(css.trailerVideo);
+			video.onplaying = null;
+			video.onended = null;
+			video.onerror = null;
 		}
 		trailerStateRef.current = 'idle';
 		trailerVideoIdRef.current = null;
@@ -972,21 +978,32 @@ const Browse = ({
 		if (!container) return;
 
 		const isMuted = settings.featuredTrailerMuted;
-		const video = document.createElement('video');
+
+		let video = trailerVideoRef.current;
+		if (!video) {
+			video = getSharedVideoElement();
+			trailerVideoRef.current = video;
+		}
 		video.className = css.trailerVideo;
+		video.playsInline = true;
+		video.controls = false;
+
 		video.muted = isMuted;
 		video.volume = isMuted ? 0 : 1;
 		video.autoplay = true;
-		video.playsInline = true;
-		video.controls = false;
-		if (startTime > 0) video.currentTime = startTime;
+		video.classList.remove(css.trailerVisible);
 
-		container.innerHTML = '';
-		container.appendChild(video);
+		if (!container.contains(video)) {
+			container.appendChild(video);
+		}
 
-		let skipInterval = null;
+		if (trailerSkipIntervalRef.current) {
+			clearInterval(trailerSkipIntervalRef.current);
+			trailerSkipIntervalRef.current = null;
+		}
+
 		if (segments.length > 0) {
-			skipInterval = setInterval(() => {
+			trailerSkipIntervalRef.current = setInterval(() => {
 				if (!video || video.paused) return;
 				const t = video.currentTime;
 				for (let i = 0; i < segments.length; i++) {
@@ -998,7 +1015,7 @@ const Browse = ({
 			}, 500);
 		}
 
-		video.addEventListener('playing', () => {
+		video.onplaying = () => {
 			if (trailerStateRef.current === 'resolving' && trailerVideoIdRef.current === videoId) {
 				trailerStateRef.current = 'playing';
 				trailerRevealTimerRef.current = setTimeout(() => {
@@ -1008,20 +1025,19 @@ const Browse = ({
 					}
 				}, TRAILER_REVEAL_MS);
 			}
-		});
+		};
 
-		video.addEventListener('ended', () => {
-			if (skipInterval) clearInterval(skipInterval);
+		video.onended = () => {
 			stopTrailer();
-		});
+		};
 
-		video.addEventListener('error', () => {
-			if (skipInterval) clearInterval(skipInterval);
+		video.onerror = () => {
 			trailerStateRef.current = 'unavailable';
-			container.innerHTML = '';
-		});
+			video.classList.remove(css.trailerVisible);
+		};
 
 		video.src = streamUrl;
+		if (startTime > 0) video.currentTime = startTime;
 		const playPromise = video.play();
 		if (playPromise) playPromise.catch(() => {});
 	}, [stopTrailer, settings.featuredTrailerMuted]);
@@ -1029,6 +1045,10 @@ const Browse = ({
 	const currentFeatured = featuredItems[currentFeaturedIndex];
 
 	useEffect(() => {
+		// Trailers disabled — isolating decoder exhaustion issue
+		stopTrailer();
+		return;
+		/* eslint-disable no-unreachable */
 		if (!settings.featuredTrailerPreview || browseMode !== 'featured' || !currentFeatured) {
 			stopTrailer();
 			return;

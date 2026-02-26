@@ -389,18 +389,49 @@ export const getAudioOutputInfo = async () => {
 	}
 };
 
+let _lastCleanupTimestamp = 0;
+const DECODER_RELEASE_MS = 2000;
+
+export const waitForDecoderRelease = async () => {
+	if (_lastCleanupTimestamp === 0) return;
+	const elapsed = Date.now() - _lastCleanupTimestamp;
+	if (elapsed < DECODER_RELEASE_MS) {
+		const wait = DECODER_RELEASE_MS - elapsed;
+		console.log('[webosVideo] Waiting ' + wait + 'ms for decoder release');
+		await new Promise(resolve => setTimeout(resolve, wait));
+	}
+};
+
+// Singleton video element — reused across Player mounts to avoid
+// exhausting webOS 4's limited hardware decoder pool.
+let _sharedVideoElement = null;
+
+export const getSharedVideoElement = () => {
+	if (!_sharedVideoElement) {
+		_sharedVideoElement = document.createElement('video');
+		_sharedVideoElement.autoplay = true;
+		_sharedVideoElement.setAttribute('webkit-playsinline', '');
+		_sharedVideoElement.setAttribute('playsinline', '');
+		_sharedVideoElement.setAttribute('preload', 'auto');
+		_sharedVideoElement.style.width = '100%';
+		_sharedVideoElement.style.height = '100%';
+		_sharedVideoElement.style.objectFit = 'contain';
+		_sharedVideoElement.style.display = 'block';
+		console.log('[webosVideo] Created shared video element');
+	}
+	return _sharedVideoElement;
+};
+
 /**
- * Release hardware video resources and reset HDR display mode.
- * Critical on webOS due to limited hardware decoder instances.
- *
- * Pauses, detaches the source, and forces the decoder back to HAVE_NOTHING.
- * Returns a Promise that resolves when done.
+ * Release hardware video resources.
+ * Pauses and detaches src so Starfish releases the HW decoder.
+ * Does NOT remove from DOM or call load().
  */
 
-export const cleanupVideoElement = (videoElement, options = {}) => {
+export const cleanupVideoElement = async (videoElement, options = {}) => {
 	if (!videoElement) {
 		console.log('[webosVideo] No video element to cleanup');
-		return Promise.resolve(false);
+		return false;
 	}
 
 	console.log('[webosVideo] Cleaning up video element resources');
@@ -412,22 +443,20 @@ export const cleanupVideoElement = (videoElement, options = {}) => {
 		videoElement.removeChild(videoElement.firstChild);
 	}
 
-	// Detach src and force readyState back to HAVE_NOTHING
+	videoElement.src = '';
 	videoElement.removeAttribute('src');
 	if (videoElement.srcObject) {
 		videoElement.srcObject = null;
 	}
-	// Do NOT call videoElement.load() here. On webOS 4 Chrome 53, loading a
-	// sourceless element corrupts the hardware decoder, subsequent play()
-	// calls on any element fail with readyState stuck at HAVE_NOTHING.
-	// DOM removal or setting a new src will release resources naturally.
+	// Do NOT remove from DOM — React owns the element.
+	// Do NOT call load() — corrupts Chrome 53 hardware decoder.
 
-	if (options.removeFromDOM && videoElement.parentNode) {
-		videoElement.parentNode.removeChild(videoElement);
-	}
+	_lastCleanupTimestamp = Date.now();
+
+	await new Promise(resolve => setTimeout(resolve, 300));
 
 	console.log('[webosVideo] Video element cleanup complete');
-	return Promise.resolve(true);
+	return true;
 };
 
 /**
@@ -513,6 +542,8 @@ export default {
 	keepScreenOn,
 	getAudioOutputInfo,
 	cleanupVideoElement,
+	waitForDecoderRelease,
+	getSharedVideoElement,
 	setupVisibilityHandler,
 	setupWebOSLifecycle
 };
