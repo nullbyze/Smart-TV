@@ -347,14 +347,14 @@ throw new Error('Invalid response from Moonfin Settings');
 }
 };
 
-export const saveMoonfinSettings = async (settings, serverUrl, token) => {
+export const saveMoonfinProfile = async (profileName, profile, serverUrl, token) => {
 const sUrl = serverUrl || jellyfinServerUrl;
 const sToken = token || jellyfinAccessToken;
 if (!sUrl || !sToken) {
 throw new Error('Server URL and token required');
 }
 
-const url = `${sUrl}/Moonfin/Settings`;
+const url = `${sUrl}/Moonfin/Settings/Profile/${profileName}`;
 const result = await fetchRequest({
 url,
 method: 'POST',
@@ -363,13 +363,16 @@ headers: {
 'Accept': 'application/json',
 'Authorization': `MediaBrowser Token="${sToken}"`
 },
-body: JSON.stringify(settings),
+body: JSON.stringify({
+profile,
+clientId: 'moonfin-tv'
+}),
 timeout: 15000
 });
 
 if (!result.success) throw new Error(result.error || 'Network error');
 if (result.status >= 400) {
-const error = new Error(`Moonfin settings save failed: ${result.status}`);
+const error = new Error(`Moonfin profile save failed: ${result.status}`);
 error.status = result.status;
 throw error;
 }
@@ -663,7 +666,7 @@ moonfinValidate,
 moonfinPing,
 getMoonfinConfig,
 getMoonfinSettings,
-saveMoonfinSettings,
+saveMoonfinProfile,
 getUser,
 PERMISSIONS,
 hasPermission,
