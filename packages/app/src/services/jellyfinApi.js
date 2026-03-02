@@ -151,16 +151,16 @@ export const api = {
 	}),
 
 	getLatest: (libraryId, limit = 20) =>
-		request(`/Users/${currentUser}/Items/Latest?ParentId=${libraryId}&Limit=${limit}&Fields=Overview,Genres,OfficialRating,ImageTags,ParentLogoImageTag&ImageTypeLimit=1&GroupItems=true`),
+		request(`/Users/${currentUser}/Items/Latest?ParentId=${libraryId}&Limit=${limit}&Fields=Overview,Genres,OfficialRating,ImageTags,ParentLogoImageTag,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,ProviderIds&ImageTypeLimit=1&GroupItems=true`),
 
 	getCollections: (limit = 50) =>
 		request(`/Users/${currentUser}/Items?IncludeItemTypes=BoxSet&Recursive=true&SortBy=SortName&SortOrder=Ascending&Limit=${limit}&Fields=PrimaryImageAspectRatio,ProductionYear`),
 
 	getResumeItems: (limit = 12) =>
-		request(`/Users/${currentUser}/Items/Resume?Limit=${limit}&MediaTypes=Video&Fields=Overview`),
+		request(`/Users/${currentUser}/Items/Resume?Limit=${limit}&MediaTypes=Video&Fields=Overview,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,ProviderIds`),
 
 	getNextUp: (limit = 24, seriesId = null) => {
-		let url = `/Shows/NextUp?UserId=${currentUser}&Limit=${limit}&Fields=Overview`;
+		let url = `/Shows/NextUp?UserId=${currentUser}&Limit=${limit}&Fields=Overview,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,ProviderIds`;
 		if (seriesId) url += `&SeriesId=${seriesId}`;
 		return request(url);
 	},
@@ -418,16 +418,16 @@ export const createApiForServer = (serverUrl, token, userId) => {
 		},
 
 		getResumeItems: () =>
-			serverRequest(`/Users/${userId}/Items/Resume?Limit=12&Recursive=true&Fields=PrimaryImageAspectRatio,Overview&MediaTypes=Video&EnableTotalRecordCount=false&ExcludeItemTypes=Book`),
+			serverRequest(`/Users/${userId}/Items/Resume?Limit=12&Recursive=true&Fields=PrimaryImageAspectRatio,Overview,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,ProviderIds&MediaTypes=Video&EnableTotalRecordCount=false&ExcludeItemTypes=Book`),
 
 		getNextUp: (limit = 12, seriesId = null) => {
-			let endpoint = `/Shows/NextUp?UserId=${userId}&Limit=${limit}&Fields=PrimaryImageAspectRatio,Overview`;
+			let endpoint = `/Shows/NextUp?UserId=${userId}&Limit=${limit}&Fields=PrimaryImageAspectRatio,Overview,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,ProviderIds`;
 			if (seriesId) endpoint += `&SeriesId=${seriesId}`;
 			return serverRequest(endpoint);
 		},
 
 		getLatestMedia: (libraryId = null, limit = 16) => {
-			let endpoint = `/Users/${userId}/Items/Latest?Limit=${limit}&Fields=PrimaryImageAspectRatio,Overview`;
+			let endpoint = `/Users/${userId}/Items/Latest?Limit=${limit}&Fields=PrimaryImageAspectRatio,Overview,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,ProviderIds`;
 			if (libraryId) endpoint += `&ParentId=${libraryId}`;
 			return serverRequest(endpoint);
 		},

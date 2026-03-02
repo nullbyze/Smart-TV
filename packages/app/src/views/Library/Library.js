@@ -93,6 +93,8 @@ const isGenreMode = !!genreFilter;
 const loadingMoreRef = useRef(false);
 const apiFetchIndexRef = useRef(0);
 const initialFocusDoneRef = useRef(false);
+const ratingsTimeoutRef = useRef(null);
+const ratingsAbortRef = useRef(null);
 
 const items = useMemo(() => {
 if (!startLetter) {
@@ -178,7 +180,7 @@ if (isFolderView) {
 		SortBy: `IsFolder,${sortOption.field}`,
 		SortOrder: sortOption.order,
 		EnableTotalRecordCount: true,
-		Fields: 'PrimaryImageAspectRatio,SortName,Path,ChildCount,MediaSourceCount,ProductionYear,ImageTags,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,ProviderIds,UserData'
+		Fields: 'PrimaryImageAspectRatio,SortName,Path,ChildCount,MediaSourceCount,ProductionYear,ImageTags,OfficialRating,CommunityRating,CriticRating,RunTimeTicks,UserData'
 	};
 	if (filters.length > 0) params.Filters = filters.join(',');
 
@@ -352,6 +354,13 @@ useEffect(() => {
 }, [backHandlerRef, showSortPanel, showSettingsPanel, isFolderView, folderStack]);
 
 useEffect(() => {
+	return () => {
+		if (ratingsTimeoutRef.current) clearTimeout(ratingsTimeoutRef.current);
+		if (ratingsAbortRef.current && typeof ratingsAbortRef.current.abort === 'function') ratingsAbortRef.current.abort();
+	};
+}, []);
+
+useEffect(() => {
 	if (showSortPanel) {
 		setTimeout(() => {
 			Spotlight.focus('sort-option-0');
@@ -479,7 +488,7 @@ if (effectiveImageType === 'thumbnail') {
 	imageId = getPrimaryImageId(item);
 	imgApiType = 'Primary';
 }
-const imageUrl = imageId ? getImageUrl(effectiveServerUrl, imageId, imgApiType, {maxHeight: 400, quality: 80}) : null;
+const imageUrl = imageId ? getImageUrl(effectiveServerUrl, imageId, imgApiType, {maxHeight: 300, quality: 70}) : null;
 
 return (
 <SpottableDiv
@@ -489,10 +498,27 @@ onClick={handleItemClick}
 onFocus={() => {
 	setFocusedItem(item);
 	if (settings?.mdblistEnabled && settings?.useMoonfinPlugin) {
-		fetchRatings(effectiveServerUrl, item).then(r => {
-			const display = buildDisplayRatings(r, effectiveServerUrl, settings?.mdblistRatingSources);
-			setFocusedRatings(display);
-		}).catch(() => setFocusedRatings([]));
+		if (ratingsTimeoutRef.current) {
+			clearTimeout(ratingsTimeoutRef.current);
+		}
+		if (ratingsAbortRef.current && typeof ratingsAbortRef.current.abort === 'function') {
+			ratingsAbortRef.current.abort();
+		}
+		ratingsTimeoutRef.current = setTimeout(() => {
+			const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+			ratingsAbortRef.current = controller;
+			const signal = controller ? controller.signal : undefined;
+			fetchRatings(effectiveServerUrl, item, {signal}).then(r => {
+				if (!(controller && controller.signal.aborted)) {
+					const display = buildDisplayRatings(r, effectiveServerUrl, settings?.mdblistRatingSources);
+					setFocusedRatings(display);
+				}
+			}).catch(() => {
+				if (!(controller && controller.signal.aborted)) {
+					setFocusedRatings([]);
+				}
+			});
+		}, 300);
 	} else {
 		setFocusedRatings([]);
 	}

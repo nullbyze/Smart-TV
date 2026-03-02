@@ -11,7 +11,6 @@ const MediaCard = ({item, serverUrl, cardType = 'portrait', onSelect, onFocusIte
 	const isSquare = cardType === 'square' || (cardType === 'portrait' && (item.Type === 'MusicAlbum' || item.Type === 'MusicArtist' || item.Type === 'Audio'));
 	const focusTimeoutRef = useRef(null);
 
-	// Cleanup timeout on unmount
 	useEffect(() => {
 		return () => {
 			if (focusTimeoutRef.current) {
@@ -20,7 +19,6 @@ const MediaCard = ({item, serverUrl, cardType = 'portrait', onSelect, onFocusIte
 		};
 	}, []);
 
-	// Support cross-server items that have their own server URL
 	const itemServerUrl = useMemo(() => {
 		return item._serverUrl || serverUrl;
 	}, [item._serverUrl, serverUrl]);
@@ -28,23 +26,22 @@ const MediaCard = ({item, serverUrl, cardType = 'portrait', onSelect, onFocusIte
 	const imageUrl = useMemo(() => {
 		if (isLandscape && item.Type === 'Episode') {
 			if (item.ImageTags?.Primary) {
-				return getImageUrl(itemServerUrl, item.Id, 'Primary', {maxWidth: 500, quality: 90});
+				return getImageUrl(itemServerUrl, item.Id, 'Primary', {maxWidth: 400, quality: 80});
 			}
 			if (item.ParentThumbItemId) {
-				return getImageUrl(itemServerUrl, item.ParentThumbItemId, 'Thumb', {maxWidth: 500, quality: 90});
+				return getImageUrl(itemServerUrl, item.ParentThumbItemId, 'Thumb', {maxWidth: 400, quality: 80});
 			}
 			if (item.ParentBackdropItemId) {
-				return getImageUrl(itemServerUrl, item.ParentBackdropItemId, 'Backdrop', {maxWidth: 500, quality: 90});
+				return getImageUrl(itemServerUrl, item.ParentBackdropItemId, 'Backdrop', {maxWidth: 400, quality: 80});
 			}
 		}
 
 		if (item.ImageTags?.Primary) {
-			return getImageUrl(itemServerUrl, item.Id, 'Primary', {maxHeight: 400, quality: 90});
+			return getImageUrl(itemServerUrl, item.Id, 'Primary', {maxHeight: 300, quality: 80});
 		}
 
-		// Audio tracks: use parent album art
 		if (item.Type === 'Audio' && item.AlbumId && item.AlbumPrimaryImageTag) {
-			return getImageUrl(itemServerUrl, item.AlbumId, 'Primary', {maxHeight: 400, quality: 90});
+			return getImageUrl(itemServerUrl, item.AlbumId, 'Primary', {maxHeight: 300, quality: 80});
 		}
 
 		return null;

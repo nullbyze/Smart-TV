@@ -40,6 +40,7 @@ const GenreBrowse = ({genre, libraryId, onSelectItem, backHandlerRef}) => {
 	const {api, serverUrl} = useAuth();
 	const {settings} = useSettings();
 	const [items, setItems] = useState([]);
+	const [itemsVersion, setItemsVersion] = useState(0);
 	const [isLoading, setIsLoading] = useState(true);
 	const [serverTotalCount, setServerTotalCount] = useState(0);
 	const [sortBy, setSortBy] = useState('SortName,Ascending');
@@ -114,7 +115,7 @@ const GenreBrowse = ({genre, libraryId, onSelectItem, backHandlerRef}) => {
 				Genres: genre.name,
 				EnableTotalRecordCount: true,
 				CollapseBoxSetItems: false,
-				Fields: 'PrimaryImageAspectRatio,ProductionYear,ImageTags,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,SeriesId,SeriesPrimaryImageTag'
+				Fields: 'ProductionYear,ImageTags,BackdropImageTags,ParentBackdropImageTags,ParentBackdropItemId,SeriesId,SeriesPrimaryImageTag,UserData'
 			};
 
 			if (libraryId) {
@@ -170,14 +171,15 @@ const GenreBrowse = ({genre, libraryId, onSelectItem, backHandlerRef}) => {
 				});
 				itemsRef.current = sparseArray;
 				loadedRangesRef.current = [{start: startIndex, end: startIndex + newItems.length - 1}];
-				setItems([...sparseArray]);
+				setItems(sparseArray);
+				setItemsVersion(v => v + 1);
 			} else {
 				newItems.forEach((item, i) => {
 					itemsRef.current[startIndex + i] = item;
 				});
 				loadedRangesRef.current.push({start: startIndex, end: startIndex + newItems.length - 1});
 				loadedRangesRef.current.sort((a, b) => a.start - b.start);
-				setItems([...itemsRef.current]);
+				setItemsVersion(v => v + 1);
 			}
 
 			if (isReset && newItems.length > 0 && !backdropSetRef.current) {
@@ -367,7 +369,7 @@ const GenreBrowse = ({genre, libraryId, onSelectItem, backHandlerRef}) => {
 				</div>
 			</SpottableDiv>
 		);
-	}, [serverUrl, handleItemClick, updateBackdrop, loadItems, isRangeLoaded, unloadDistantItems]);
+	}, [serverUrl, handleItemClick, updateBackdrop, loadItems, isRangeLoaded, unloadDistantItems, itemsVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const currentSort = SORT_OPTIONS.find(o => o.key === sortBy);
 	const currentFilter = FILTER_OPTIONS.find(o => o.key === filterType);

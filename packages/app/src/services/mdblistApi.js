@@ -97,7 +97,7 @@ export const formatRating = (rating) => {
 	}
 };
 
-export const fetchRatings = async (serverUrl, item) => {
+export const fetchRatings = async (serverUrl, item, options = {}) => {
 	const contentType = getContentType(item);
 	const tmdbId = getTmdbId(item);
 
@@ -115,11 +115,15 @@ export const fetchRatings = async (serverUrl, item) => {
 
 	try {
 		const url = `${baseUrl}/Moonfin/MdbList/Ratings?type=${encodeURIComponent(contentType)}&tmdbId=${encodeURIComponent(tmdbId)}`;
-		const response = await fetch(url, {
+		const fetchOptions = {
 			headers: {
 				'X-Emby-Authorization': getAuthHeader()
 			}
-		});
+		};
+		if (options.signal) {
+			fetchOptions.signal = options.signal;
+		}
+		const response = await fetch(url, fetchOptions);
 
 		if (!response.ok) return [];
 

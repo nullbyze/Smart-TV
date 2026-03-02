@@ -17,7 +17,7 @@ import css from './Browse.module.less';
 
 const FOCUS_DELAY_MS = 100;
 const BACKDROP_DEBOUNCE_MS = 500;
-const FOCUS_ITEM_DEBOUNCE_MS = 150;
+const FOCUS_ITEM_DEBOUNCE_MS = 400;
 const FEATURED_GENRES_LIMIT = 3;
 const DETAIL_GENRES_LIMIT = 2;
 const TRANSITION_DELAY_MS = 450;
@@ -68,6 +68,7 @@ const Browse = ({
 	const pendingBackdropRef = useRef(null);
 	const preloadedImagesRef = useRef(new Set());
 	const focusItemTimeoutRef = useRef(null);
+	const focusItemAbortRef = useRef(null);
 	const lastFocusedRowRef = useRef(null);
 	const wasVisibleRef = useRef(true);
 	const trailerContainerRef = useRef(null);
@@ -303,6 +304,12 @@ const Browse = ({
 		return () => {
 			if (focusItemTimeoutRef.current) {
 				clearTimeout(focusItemTimeoutRef.current);
+			}
+			if (focusItemAbortRef.current && typeof focusItemAbortRef.current.abort === 'function') {
+				focusItemAbortRef.current.abort();
+			}
+			if (backdropFadeIntervalRef.current) {
+				clearTimeout(backdropFadeIntervalRef.current);
 			}
 		};
 	}, []);
@@ -740,29 +747,21 @@ const Browse = ({
 	}, [featuredItems.length, featuredFocused, browseMode, settings.carouselSpeed, settings.showFeaturedBar, trailerActive]);
 
 	const crossFadeBackdrop = useCallback(() => {
-		if (backdropFadeIntervalRef.current) {
-			clearInterval(backdropFadeIntervalRef.current);
-		}
-
-		let inValue = 0;
-		let outValue = 1;
-
 		setBackdropOpacity(0);
 		setPrevBackdropOpacity(1);
 
-		backdropFadeIntervalRef.current = setInterval(() => {
-			inValue = Math.min(1, inValue + 0.1);
-			outValue = Math.max(0, outValue - 0.1);
+		window.requestAnimationFrame(() => {
+			setBackdropOpacity(1);
+			setPrevBackdropOpacity(0);
+		});
 
-			setBackdropOpacity(inValue);
-			setPrevBackdropOpacity(outValue);
-
-			if (inValue >= 1 && outValue <= 0) {
-				clearInterval(backdropFadeIntervalRef.current);
-				backdropFadeIntervalRef.current = null;
-				setPrevBackdropUrl(null);
-			}
-		}, 45); // ca. 450ms
+		if (backdropFadeIntervalRef.current) {
+			clearTimeout(backdropFadeIntervalRef.current);
+		}
+		backdropFadeIntervalRef.current = setTimeout(() => {
+			setPrevBackdropUrl(null);
+			backdropFadeIntervalRef.current = null;
+		}, 500);
 	}, []);
 
 	useEffect(() => {
@@ -789,11 +788,18 @@ const Browse = ({
 			}
 			pendingBackdropRef.current = url;
 			backdropTimeoutRef.current = setTimeout(() => {
-				window.requestAnimationFrame(() => {
-					setPrevBackdropUrl(backdropUrl);
-					setBackdropUrl(pendingBackdropRef.current);
-					crossFadeBackdrop();
-				});
+				const nextUrl = pendingBackdropRef.current;
+				const img = new window.Image();
+				const applyBackdrop = () => {
+					window.requestAnimationFrame(() => {
+						setPrevBackdropUrl(backdropUrl);
+						setBackdropUrl(nextUrl);
+						crossFadeBackdrop();
+					});
+				};
+				img.onload = applyBackdrop;
+				img.onerror = applyBackdrop;
+				img.src = nextUrl;
 			}, BACKDROP_DEBOUNCE_MS);
 		}
 
@@ -885,13 +891,21 @@ const Browse = ({
 		if (focusItemTimeoutRef.current) {
 			clearTimeout(focusItemTimeoutRef.current);
 		}
+		if (focusItemAbortRef.current && typeof focusItemAbortRef.current.abort === 'function') {
+			focusItemAbortRef.current.abort();
+			focusItemAbortRef.current = null;
+		}
 		focusItemTimeoutRef.current = setTimeout(() => {
 			setFocusedItem(item);
 			const needsBackdrop = !item.BackdropImageTags?.length && !item.ParentBackdropImageTags?.length;
 			const needsProviderIds = !item.ProviderIds;
 			if (needsBackdrop || needsProviderIds) {
+				const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+				focusItemAbortRef.current = controller;
 				api.getItem(item.Id).then(fullItem => {
-					setFocusedItem(fullItem);
+					if (!(controller && controller.signal.aborted)) {
+						setFocusedItem(fullItem);
+					}
 				}).catch(() => {});
 			}
 		}, FOCUS_ITEM_DEBOUNCE_MS);
@@ -1104,7 +1118,7 @@ const Browse = ({
 									? `blur(${settings.backdropBlurHome}px)`
 									: 'none',
 								opacity: prevBackdropOpacity,
-								transition: 'none'
+								transition: 'opacity 0.45s ease'
 							}}
 						/>
 					)}
@@ -1119,7 +1133,7 @@ const Browse = ({
 									? `blur(${settings.backdropBlurHome}px)`
 									: 'none',
 								opacity: backdropOpacity,
-								transition: 'none'
+								transition: 'opacity 0.45s ease'
 							}}
 						/>
 					)}
