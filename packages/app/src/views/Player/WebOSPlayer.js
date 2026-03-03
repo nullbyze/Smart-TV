@@ -738,11 +738,9 @@ const Player = ({item, resume, initialMediaSourceId, initialAudioIndex, initialS
 				hls.loadSource(srcUrl);
 			} else {
 				destroyHlsPlayer();
-				// <source> element provides DV codec hints to Starfish via type attribute
-				const sourceEl = document.createElement('source');
-				sourceEl.src = srcUrl;
-				sourceEl.type = mimeType;
-				video.appendChild(sourceEl);
+				video.src = srcUrl;
+				// Pass DV / codec hints so Starfish can activate the right decoder
+				if (mimeType) video.type = mimeType;
 				video.load();
 			}
 
