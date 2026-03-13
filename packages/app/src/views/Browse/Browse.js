@@ -77,6 +77,8 @@ const Browse = ({
 	const trailerVideoIdRef = useRef(null);
 	const trailerRevealTimerRef = useRef(null);
 	const sponsorSegmentsRef = useRef([]);
+	const prevFilteredRowsRef = useRef([]);
+	const filteredRowsLengthRef = useRef(0);
 
 	// Helper to get the correct server URL for an item (supports cross-server items)
 	const getItemServerUrl = useCallback((item) => {
@@ -166,11 +168,13 @@ const Browse = ({
 	const filteredRows = useMemo(() => {
 		const enabledRowIds = homeRowsConfig.filter(r => r.enabled).map(r => r.id);
 
+		let result;
+
 		if (settings.mergeContinueWatchingNextUp) {
 			const mergeResumeRow = allRowData.find(r => r.id === 'resume');
 			const nextUpRow = allRowData.find(r => r.id === 'nextup');
 
-			let result = allRowData.filter(r => r.id !== 'resume' && r.id !== 'nextup');
+			result = allRowData.filter(r => r.id !== 'resume' && r.id !== 'nextup');
 
 			if (mergeResumeRow || nextUpRow) {
 				const resumeItems = mergeResumeRow?.items || [];
@@ -234,35 +238,55 @@ const Browse = ({
 				}
 			}
 
-			return result.filter(row =>
+			result = result.filter(row =>
 				row.id === 'continue-nextup' ||
 				enabledRowIds.includes(row.id) ||
 				(row.isLatestRow && enabledRowIds.includes('latest-media'))
 			);
+		} else {
+			const resumeRow = allRowData.find(r => r.id === 'resume');
+			const resumeItemIds = new Set((resumeRow?.items || []).map(item => item.Id));
+
+			result = allRowData
+				.map(row => {
+					if (row.id === 'nextup' && resumeItemIds.size > 0) {
+						const filteredItems = row.items.filter(item => !resumeItemIds.has(item.Id));
+						return filteredItems.length > 0 ? {...row, items: filteredItems} : null;
+					}
+					return row;
+				})
+				.filter(row => {
+					if (!row) return false;
+					if (row.id === 'resume' || row.id === 'nextup') {
+						return enabledRowIds.includes(row.id);
+					}
+					if (row.isLatestRow) {
+						return enabledRowIds.includes('latest-media');
+					}
+					return enabledRowIds.includes(row.id);
+				});
 		}
 
-		// Filter out Next Up items that are in Continue Watching
-		const resumeRow = allRowData.find(r => r.id === 'resume');
-		const resumeItemIds = new Set((resumeRow?.items || []).map(item => item.Id));
+		const prev = prevFilteredRowsRef.current;
+		if (prev.length === result.length) {
+			let unchanged = true;
+			for (let i = 0; i < result.length; i++) {
+				if (result[i].id !== prev[i].id || result[i].items.length !== prev[i].items.length) {
+					unchanged = false;
+					break;
+				}
+				const rItems = result[i].items;
+				const pItems = prev[i].items;
+				if (rItems[0]?.Id !== pItems[0]?.Id || rItems[rItems.length - 1]?.Id !== pItems[pItems.length - 1]?.Id) {
+					unchanged = false;
+					break;
+				}
+			}
+			if (unchanged) return prev;
+		}
 
-		return allRowData
-			.map(row => {
-				if (row.id === 'nextup' && resumeItemIds.size > 0) {
-					const filteredItems = row.items.filter(item => !resumeItemIds.has(item.Id));
-					return filteredItems.length > 0 ? {...row, items: filteredItems} : null;
-				}
-				return row;
-			})
-			.filter(row => {
-				if (!row) return false;
-				if (row.id === 'resume' || row.id === 'nextup') {
-					return enabledRowIds.includes(row.id);
-				}
-				if (row.isLatestRow) {
-					return enabledRowIds.includes('latest-media');
-				}
-				return enabledRowIds.includes(row.id);
-			});
+		prevFilteredRowsRef.current = result;
+		return result;
 	}, [allRowData, homeRowsConfig, settings.mergeContinueWatchingNextUp]);
 
 	const handleNavigateUp = useCallback((fromRowIndex) => {
@@ -283,15 +307,17 @@ const Browse = ({
 		}
 	}, [settings.showFeaturedBar, settings.navbarPosition]);
 
+	filteredRowsLengthRef.current = filteredRows.length;
+
 	const handleNavigateDown = useCallback((fromRowIndex) => {
 		const targetIndex = fromRowIndex + 1;
-		if (targetIndex >= filteredRows.length) return;
+		if (targetIndex >= filteredRowsLengthRef.current) return;
 		Spotlight.focus(`row-${targetIndex}`);
 		const targetRow = document.querySelector(`[data-row-index="${targetIndex}"]`);
 		if (targetRow) {
 			targetRow.scrollIntoView({block: 'start'});
 		}
-	}, [filteredRows.length]);
+	}, []);
 
 	useEffect(() => {
 		if (settings.showFeaturedBar === false) {
@@ -623,75 +649,49 @@ const Browse = ({
 					]);
 				}
 
-				const completeRowData = [];
+				let appendedData;
+				setAllRowData(prev => {
+					const newRows = [];
 
-				if (resumeItems.Items?.length > 0) {
-					completeRowData.push({
-						id: 'resume',
-						title: 'Continue Watching',
-						items: resumeItems.Items,
-						type: 'landscape'
-					});
-				}
+					for (const result of latestResults) {
+						if (result && result.latest?.length > 0) {
+							const libraryTitle = unifiedMode && result.lib._serverName
+								? `${result.lib.Name} (${result.lib._serverName})`
+								: result.lib.Name;
+							const rowId = `latest-${result.lib.Id}${result.lib._serverName ? '-' + result.lib._serverName : ''}`;
 
-				if (nextUp.Items?.length > 0) {
-					completeRowData.push({
-						id: 'nextup',
-						title: 'Next Up',
-						items: nextUp.Items,
-						type: 'landscape'
-					});
-				}
+							if (!prev.some(r => r.id === rowId)) {
+								newRows.push({
+									id: rowId,
+									title: `Latest in ${libraryTitle}`,
+									items: result.latest,
+									library: result.lib,
+									type: result.lib.CollectionType?.toLowerCase() === 'music' ? 'square' : 'portrait',
+									isLatestRow: true
+								});
+							}
+						}
+					}
 
-				for (const result of latestResults) {
-					if (result && result.latest?.length > 0) {
-						// In unified mode, append server name to library title
-						const libraryTitle = unifiedMode && result.lib._serverName
-							? `${result.lib.Name} (${result.lib._serverName})`
-							: result.lib.Name;
-						completeRowData.push({
-							id: `latest-${result.lib.Id}${result.lib._serverName ? '-' + result.lib._serverName : ''}`,
-							title: `Latest in ${libraryTitle}`,
-							items: result.latest,
-							library: result.lib,
-							type: result.lib.CollectionType?.toLowerCase() === 'music' ? 'square' : 'portrait',
-							isLatestRow: true
+					if (collectionsResult?.Items?.length > 0 && !prev.some(r => r.id === 'collections')) {
+						newRows.push({
+							id: 'collections',
+							title: 'Collections',
+							items: collectionsResult.Items,
+							type: 'portrait'
 						});
 					}
-				}
 
-				if (collectionsResult?.Items?.length > 0) {
-					completeRowData.push({
-						id: 'collections',
-						title: 'Collections',
-						items: collectionsResult.Items,
-						type: 'portrait'
-					});
-				}
+					if (newRows.length === 0) return prev;
+					const updated = [...prev, ...newRows];
+					cachedRowData = updated;
+					cacheTimestamp = Date.now();
+					appendedData = updated;
+					return updated;
+				});
 
-				if (libs.length > 0) {
-					const visibleLibs = libs.filter(lib => !EXCLUDED_COLLECTION_TYPES.includes(lib.CollectionType?.toLowerCase()));
-					if (visibleLibs.length > 0) {
-						completeRowData.push({
-							id: 'library-tiles',
-							title: 'My Media',
-							items: visibleLibs.map(lib => ({
-								...lib,
-								Type: 'CollectionFolder',
-								isLibraryTile: true
-							})),
-							type: 'landscape',
-							isLibraryRow: true
-						});
-					}
-				}
-
-				setAllRowData(completeRowData);
-				cachedRowData = completeRowData;
-				cacheTimestamp = Date.now();
-
-				if (!unifiedMode) {
-					saveBrowseCache(completeRowData, libs, cachedFeaturedItems);
+				if (!unifiedMode && appendedData) {
+					saveBrowseCache(appendedData, libs, cachedFeaturedItems);
 				}
 
 			} catch (err) {

@@ -96,4 +96,22 @@ const MediaRow = ({
 	);
 };
 
-export default memo(MediaRow);
+const areRowPropsEqual = (prev, next) => {
+	if (prev.rowId !== next.rowId) return false;
+	if (prev.title !== next.title) return false;
+	if (prev.cardType !== next.cardType) return false;
+	if (prev.serverUrl !== next.serverUrl) return false;
+	if (prev.rowIndex !== next.rowIndex) return false;
+	if (prev.showServerBadge !== next.showServerBadge) return false;
+	if (prev.className !== next.className) return false;
+	if (prev.items === next.items) return true;
+	if (prev.items?.length !== next.items?.length) return false;
+	for (let i = 0; i < prev.items.length; i++) {
+		if (prev.items[i].Id !== next.items[i].Id) return false;
+		if (prev.items[i].UserData?.PlayedPercentage !== next.items[i].UserData?.PlayedPercentage) return false;
+		if (prev.items[i].UserData?.Played !== next.items[i].UserData?.Played) return false;
+	}
+	return true;
+};
+
+export default memo(MediaRow, areRowPropsEqual);
